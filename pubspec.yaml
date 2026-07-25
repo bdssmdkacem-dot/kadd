@@ -1,0 +1,64 @@
+name: kadd
+description: "كدّ — قفل التطبيقات بالمجهود وبالتزام الصلاة"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management (matches Sufra's pattern)
+  provider: ^6.1.2
+
+  # Local persistence (settings, stats, streak history)
+  shared_preferences: ^2.2.3
+
+  # Fonts: Noto Kufi Arabic (display) + IBM Plex Sans Arabic (body)
+  google_fonts: ^6.2.1
+
+  # Camera + pose detection for pushup/squat rep counting
+  camera: ^0.10.6
+  google_mlkit_pose_detection: ^0.10.0
+
+  # On-device rug classification (custom trained TFLite model — see
+  # assets/models/README.md). Uses ML Kit's Image Labeling API with a local
+  # custom model instead of the tflite_flutter package directly: as of
+  # writing, tflite_flutter 0.10.4 fails to compile on current Dart SDKs
+  # (it calls typed_data's UnmodifiableUint8ListView, which was removed —
+  # see https://github.com/tensorflow/flutter-tflite/issues/232, still open).
+  # ML Kit's native runtime sidesteps that bug entirely and reuses the same
+  # google_mlkit_commons plumbing pose detection already depends on.
+  google_mlkit_image_labeling: ^0.14.2
+  path_provider: ^2.1.4 # copies the bundled asset model to a real file path ML Kit can load
+  path: ^1.9.0
+
+  # Prayer times: GPS + Aladhan API (method=21 = Moroccan Habous/Awqaf calculation)
+  geolocator: ^12.0.0
+  http: ^1.2.1
+
+  # Native bridge to the Android lock service (usage stats + overlay)
+  # implemented via platform channel, no extra package needed
+
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#12151B"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/
+    - assets/icon/
+  fonts: [] # google_fonts fetches at runtime; bundle offline if App Store review requires it

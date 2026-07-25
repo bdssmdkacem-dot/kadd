@@ -1,0 +1,55 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform folder
+        # Safe on an existing project: adds android/ without touching
+        # lib/ or pubspec.yaml, which already exist in this repo.
+        run: flutter create --platforms=android --org com.comptaflow .
+
+      - name: Copy native Kotlin sources into the generated project
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/comptaflow/kadd
+          cp android_additions/kotlin/*.kt android/app/src/main/kotlin/com/comptaflow/kadd/
+
+      - name: Patch AndroidManifest.xml with kadd's permissions/service/receivers
+        run: python3 scripts/patch_manifest.py
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: flutter pub run flutter_launcher_icons
+
+      - name: Diagnostics (helps debug CI failures without breaking the build)
+        if: always()
+        run: |
+          flutter --version
+          dart --version
+          flutter doctor -v
+          echo "--- android/app/build.gradle.kts (or .gradle) ---"
+          cat android/app/build.gradle.kts 2>/dev/null || cat android/app/build.gradle
+
+      - name: Build release APK
+        run: flutter build apk --release -v
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kadd-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
