@@ -16,10 +16,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate Android platform folder
-        # Safe on an existing project: adds android/ without touching
-        # lib/ or pubspec.yaml, which already exist in this repo.
-        run: flutter create --platforms=android --org com.comptaflow .
+      
 
       - name: Copy native Kotlin sources into the generated project
         run: |
