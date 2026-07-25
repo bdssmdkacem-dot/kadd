@@ -21,17 +21,8 @@ dependencies:
 
   # Camera + pose detection for pushup/squat rep counting
   camera: ^0.10.6
-  google_mlkit_pose_detection: ^0.10.0
-
-  # On-device rug classification (custom trained TFLite model — see
-  # assets/models/README.md). Uses ML Kit's Image Labeling API with a local
-  # custom model instead of the tflite_flutter package directly: as of
-  # writing, tflite_flutter 0.10.4 fails to compile on current Dart SDKs
-  # (it calls typed_data's UnmodifiableUint8ListView, which was removed —
-  # see https://github.com/tensorflow/flutter-tflite/issues/232, still open).
-  # ML Kit's native runtime sidesteps that bug entirely and reuses the same
-  # google_mlkit_commons plumbing pose detection already depends on.
-  google_mlkit_image_labeling: ^0.14.2
+google_mlkit_pose_detection: ^0.14.1
+google_mlkit_image_labeling: ^0.14.2
   path_provider: ^2.1.4 # copies the bundled asset model to a real file path ML Kit can load
   path: ^1.9.0
 
