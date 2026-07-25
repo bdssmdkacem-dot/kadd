@@ -39,7 +39,9 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+
   assets:
     - assets/models/
     - assets/icon/
-  fonts: [] # google_fonts fetches at runtime; bundle offline if App Store review requires it
+
+  fonts: []
