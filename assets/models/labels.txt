@@ -1,0 +1,2 @@
+0 rug
+1 not_rug
