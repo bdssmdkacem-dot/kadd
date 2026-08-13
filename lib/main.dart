@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import 'models/locked_app.dart';
 import 'models/prayer.dart';
 import 'state/app_state.dart';
@@ -14,19 +15,25 @@ import 'screens/stats_screen.dart';
 import 'screens/rep_camera_screen.dart';
 import 'screens/prayer_lock_screen.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Fire-and-forget: don't block the first frame on ad network calls.
-  // AdsService queues its own consent/init sequence internally, and every
-  // ad surface (banner widget, interstitial call) already no-ops safely
-  // if this hasn't finished yet.
-  unawaited(AdsService.instance.init());
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState()..init(),
       child: const KaddApp(),
     ),
   );
+
+  // Initialize ads only after the first frame. A failure in the ad SDK must
+  // never prevent Kadd from launching.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(
+      AdsService.instance.init().catchError((Object error, StackTrace stack) {
+        debugPrint('Kadd: Ads initialization failed: $error');
+      }),
+    );
+  });
 }
 
 class KaddApp extends StatelessWidget {
@@ -44,10 +51,6 @@ class KaddApp extends StatelessWidget {
     );
   }
 
-  /// Resolves both the normal in-app route ("/") and the two routes
-  /// LockActivity.kt launches directly from native code when a locked app
-  /// is foregrounded — see LockActivity's getInitialRoute() for the Kotlin
-  /// side of this contract. Keep the two in sync if either changes.
   Route<dynamic> _onGenerateRoute(RouteSettings settings) {
     final uri = Uri.parse(settings.name ?? '/');
 
@@ -56,6 +59,14 @@ class KaddApp extends StatelessWidget {
       return MaterialPageRoute(
         builder: (context) {
           final state = context.read<AppState>();
+
+          // Native LockActivity can launch this route before AppState has
+          // loaded the installed-app list. Never crash because the list is
+          // temporarily empty.
+          if (state.apps.isEmpty) {
+            return const RootNav();
+          }
+
           final app = state.apps.firstWhere(
             (a) => a.packageName == packageName,
             orElse: () => state.apps.first,
@@ -71,7 +82,9 @@ class KaddApp extends StatelessWidget {
         (p) => p.name == prayerRaw,
         orElse: () => PrayerName.dhuhr,
       );
-      return MaterialPageRoute(builder: (_) => PrayerLockScreen(prayer: prayer));
+      return MaterialPageRoute(
+        builder: (_) => PrayerLockScreen(prayer: prayer),
+      );
     }
 
     return MaterialPageRoute(builder: (_) => const RootNav());
@@ -125,10 +138,22 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
           selectedIndex: _index,
           onDestinationSelected: (i) => setState(() => _index = i),
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.lock_outline), label: 'الرئيسية'),
-            NavigationDestination(icon: Icon(Icons.apps), label: 'التطبيقات'),
-            NavigationDestination(icon: Icon(Icons.mosque_outlined), label: 'الصلاة'),
-            NavigationDestination(icon: Icon(Icons.bar_chart), label: 'الإحصائيات'),
+            NavigationDestination(
+              icon: Icon(Icons.lock_outline),
+              label: 'الرئيسية',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.apps),
+              label: 'التطبيقات',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.mosque_outlined),
+              label: 'الصلاة',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.bar_chart),
+              label: 'الإحصائيات',
+            ),
           ],
         ),
       ),
