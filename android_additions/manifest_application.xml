@@ -1,0 +1,32 @@
+<!-- AdMob: معرف تطبيق تجريبي رسمي من Google (ca-app-pub-3940256099942544~3347511713).
+     يخدم بلا أي تسجيل، لكن يورّي "Test Ad" فقط أبدًا. قبل النشر على Play
+     Store، بدّله بمعرف تطبيقك الحقيقي من https://apps.admob.com (بعد ما
+     تسجّل التطبيق هناك) — راجع PLAYSTORE_CHECKLIST.md § AdMob. -->
+<meta-data
+    android:name="com.google.android.gms.ads.APPLICATION_ID"
+    android:value="ca-app-pub-3940256099942544~3347511713" />
+
+<service
+    android:name=".LockForegroundService"
+    android:exported="false"
+    android:foregroundServiceType="specialUse">
+    <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Blocks distracting apps until the user completes an exercise or prayer-rug check, at the user's own request" />
+</service>
+
+<activity
+    android:name=".LockActivity"
+    android:exported="false"
+    android:theme="@style/LaunchTheme"
+    android:launchMode="singleTask"
+    android:showWhenLocked="false"
+    android:turnScreenOn="false" />
+
+<receiver android:name=".AthanLockReceiver" android:exported="false" />
+
+<receiver android:name=".BootReceiver" android:exported="false">
+    <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+    </intent-filter>
+</receiver>
