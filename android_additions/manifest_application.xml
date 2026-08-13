@@ -23,8 +23,6 @@
     android:showWhenLocked="false"
     android:turnScreenOn="false" />
 
-<receiver android:name=".AthanLockReceiver" android:exported="false" />
-
 <receiver android:name=".BootReceiver" android:exported="false">
     <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED" />
