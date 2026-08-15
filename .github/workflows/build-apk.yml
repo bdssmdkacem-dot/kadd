@@ -17,15 +17,20 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate Android platform folder
-        run: flutter create --platforms=android --org com.comptaflow .
+      # Keep the repository's Android project as the source of truth. Flutter
+      # creates a default MainActivity when generating a platform folder, so
+      # remove that generated class before installing Kadd's native activity.
+      - name: Prepare Android platform
+        run: |
+          test -f android/settings.gradle
+          rm -f android/app/src/main/kotlin/com/comptaflow/kadd/MainActivity.kt
 
-      - name: Copy native Kotlin sources into the generated project
+      - name: Copy native Kotlin sources into the Android project
         run: |
           mkdir -p android/app/src/main/kotlin/com/comptaflow/kadd
           cp android_additions/kotlin/*.kt android/app/src/main/kotlin/com/comptaflow/kadd/
 
-      - name: Patch AndroidManifest.xml with kadd's permissions/service/receivers
+      - name: Patch AndroidManifest.xml with Kadd permissions/service/receivers
         run: python3 scripts/patch_manifest.py
 
       - name: Install Flutter dependencies
@@ -40,8 +45,12 @@ jobs:
           flutter --version
           dart --version
           flutter doctor -v
-          echo "--- android/app/build.gradle.kts (or .gradle) ---"
-          cat android/app/build.gradle.kts 2>/dev/null || cat android/app/build.gradle
+          echo "--- Android project ---"
+          find android/app/src/main -maxdepth 5 -type f | sort
+          echo "--- android/settings.gradle ---"
+          cat android/settings.gradle
+          echo "--- android/app/build.gradle ---"
+          cat android/app/build.gradle
 
       - name: Build release APK
         run: flutter build apk --release -v
