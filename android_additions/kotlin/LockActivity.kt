@@ -1,5 +1,8 @@
 package com.comptaflow.kadd
 
+import android.os.Build
+import android.os.Bundle
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 
 /**
@@ -10,6 +13,20 @@ import io.flutter.embedding.android.FlutterActivity
  * moment a locked, unverified package is foregrounded.
  */
 class LockActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+    }
+
     override fun getInitialRoute(): String {
         return if (LockPrefs.isAthanLockActive(this)) {
             val prayer = LockPrefs.getActivePrayerName(this) ?: "dhuhr"
@@ -20,10 +37,5 @@ class LockActivity : FlutterActivity() {
         }
     }
 
-    // Each locked-app launch gets its own fresh engine rather than a shared
-    // cached one — simpler to reason about for a screen that's shown for a
-    // few seconds at a time, at the cost of a slightly slower cold start.
-    // Worth revisiting with a cached/pre-warmed engine if that startup lag
-    // is noticeable in practice.
     override fun getCachedEngineId(): String? = null
 }
