@@ -14,6 +14,27 @@ class AppPickerScreen extends StatefulWidget {
 
 class _AppPickerScreenState extends State<AppPickerScreen> {
   String _query = '';
+  String? _busyPackage;
+
+  Future<void> _setLocked(AppState state, String packageName, bool locked) async {
+    if (_busyPackage != null) return;
+    setState(() => _busyPackage = packageName);
+    try {
+      if (locked) {
+        await state.addLockedApp(packageName);
+      } else {
+        await state.removeLockedApp(packageName);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث القفل: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busyPackage = null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -113,35 +134,49 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                           itemBuilder: (context, i) {
                             final app = filtered[i];
                             final isLocked = lockedPackages.contains(app.packageName);
+                            final isBusy = _busyPackage == app.packageName;
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surface,
-                                  border: Border.all(color: AppColors.line),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
                                   borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Row(
-                                  children: [
-                                    AppIcon(iconBytes: app.icon),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(app.name,
-                                          style: AppTextStyles.body(size: 13.5, weight: FontWeight.w600)),
+                                  onTap: isBusy ? null : () => _setLocked(state, app.packageName, !isLocked),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surface,
+                                      border: Border.all(
+                                        color: isLocked ? AppColors.signal : AppColors.line,
+                                        width: isLocked ? 1.3 : 1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(14),
                                     ),
-                                    Switch(
-                                      value: isLocked,
-                                      activeColor: AppColors.signal,
-                                      onChanged: (v) {
-                                        if (v) {
-                                          state.addLockedApp(app.packageName);
-                                        } else {
-                                          state.removeLockedApp(app.packageName);
-                                        }
-                                      },
+                                    child: Row(
+                                      children: [
+                                        AppIcon(iconBytes: app.icon),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            app.name,
+                                            style: AppTextStyles.body(size: 13.5, weight: FontWeight.w600),
+                                          ),
+                                        ),
+                                        if (isBusy)
+                                          const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          )
+                                        else
+                                          Switch(
+                                            value: isLocked,
+                                            activeColor: AppColors.signal,
+                                            onChanged: (v) => _setLocked(state, app.packageName, v),
+                                          ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             );
