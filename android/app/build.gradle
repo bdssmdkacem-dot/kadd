@@ -1,0 +1,42 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace "com.comptaflow.kadd"
+    compileSdk flutter.compileSdkVersion
+
+    defaultConfig {
+        applicationId "com.comptaflow.kadd"
+        minSdk flutter.minSdkVersion
+        targetSdk flutter.targetSdkVersion
+        versionCode flutter.versionCode
+        versionName flutter.versionName
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+}
+
+flutter { source '../..' }
+
+tasks.register('installKaddNativeAdditions') {
+    doLast {
+        def src = file('../../android_additions/kotlin')
+        def dst = file('src/main/kotlin/com/comptaflow/kadd')
+        if (src.exists()) {
+            copy { from src; into dst; include '*.kt' }
+        }
+    }
+}
+
+tasks.named('preBuild').configure { dependsOn 'installKaddNativeAdditions' }
