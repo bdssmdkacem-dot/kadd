@@ -17,6 +17,10 @@ jobs:
           channel: stable
           cache: true
 
+     - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+
+
       # Keep the repository's Android project as the source of truth. Flutter
       # creates a default MainActivity when generating a platform folder, so
       # remove that generated class before installing Kadd's native activity.
