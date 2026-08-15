@@ -37,8 +37,14 @@
             android:name=".LockForegroundService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
-        <activity android:name=".LockActivity" android:exported="false" android:theme="@style/LockTheme" />
-        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
+        <activity
+            android:name=".LockActivity"
+            android:exported="false"
+            android:theme="@style/LockTheme" />
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
