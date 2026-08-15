@@ -17,9 +17,8 @@ class AppState extends ChangeNotifier {
 
   List<PrayerSetting> prayers = defaultPrayerSettings();
   int delayMinutesAfterAthan = 5;
-  MoroccanCity selectedCity = moroccanCities.first; // Casablanca
+  MoroccanCity selectedCity = moroccanCities.first;
 
-  // Stats
   int repsThisWeek = 0;
   int minutesEarnedToday = 0;
   int streakDays = 0;
@@ -27,13 +26,10 @@ class AppState extends ChangeNotifier {
 
   bool hasUsageAccess = false;
 
-  /// Every launchable app on the device, for the "add app to lock" picker.
   List<AppInfo> availableApps = [];
   bool loadingAvailableApps = false;
   final Map<String, AppInfo> _appInfoCache = {};
 
-  /// Set if the last [loadAvailableApps] call failed, so the picker screen
-  /// can show the real reason instead of a generic empty state.
   Object? get availableAppsError => _installedAppsService.lastError;
 
   final PrayerTimesService _prayerTimesService = PrayerTimesService();
@@ -41,19 +37,37 @@ class AppState extends ChangeNotifier {
   final InstalledAppsService _installedAppsService = InstalledAppsService();
 
   Future<void> init() async {
-    await _loadFromDisk();
-    await refreshPrayerTimes();
-    await _usageService.syncLockedPackages(
-      apps.where((a) => a.isEnabled).map((a) => a.packageName).toList(),
-    );
-    await checkUsageAccess();
+    // Each startup subsystem is isolated. A native lock-service failure must
+    // never stop the installed-app picker (or the rest of the UI) loading.
+    try {
+      await _loadFromDisk();
+    } catch (e, st) {
+      debugPrint('Kadd: loading saved state failed: $e\n$st');
+    }
+
+    try {
+      await refreshPrayerTimes();
+    } catch (e, st) {
+      debugPrint('Kadd: prayer initialization failed: $e\n$st');
+    }
+
+    try {
+      await checkUsageAccess();
+    } catch (e, st) {
+      debugPrint('Kadd: usage access initialization failed: $e\n$st');
+    }
+
+    // Sync existing locks only after the UI/permissions are initialized.
+    // Failure here is reported but does not prevent app discovery.
+    try {
+      await _syncLockedPackages();
+    } catch (e, st) {
+      debugPrint('Kadd: initial lock sync failed: $e\n$st');
+    }
+
     await loadAvailableApps();
   }
 
-  /// Call again on app resume (e.g. after the user comes back from the
-  /// system Usage Access settings screen) — there's no direct callback for
-  /// "permission granted" here, so re-checking on resume is the standard
-  /// pattern for this particular Android permission.
   Future<void> checkUsageAccess() async {
     hasUsageAccess = await _usageService.hasUsageAccess();
     notifyListeners();
@@ -61,46 +75,59 @@ class AppState extends ChangeNotifier {
 
   Future<void> requestUsageAccess() => _usageService.requestUsageAccess();
 
-  /// Loads the device's installed apps for the picker, and caches each one
-  /// by package name so displayNameFor()/iconFor() can resolve locked apps
-  /// instantly without a repeat lookup.
   Future<void> loadAvailableApps({bool forceRefresh = false}) async {
     loadingAvailableApps = true;
     notifyListeners();
-    availableApps = await _installedAppsService.getLaunchableApps(forceRefresh: forceRefresh);
-    for (final info in availableApps) {
-      _appInfoCache[info.packageName] = info;
+    try {
+      availableApps = await _installedAppsService.getLaunchableApps(forceRefresh: forceRefresh);
+      for (final info in availableApps) {
+        _appInfoCache[info.packageName] = info;
+      }
+    } finally {
+      loadingAvailableApps = false;
+      notifyListeners();
     }
-    loadingAvailableApps = false;
-    notifyListeners();
   }
 
-  /// Best-effort display name for a locked app. Falls back to the raw
-  /// package name if the app isn't in the cache (e.g. it was uninstalled
-  /// after being locked) — never breaks the UI over a missing lookup.
   String displayNameFor(String packageName) => _appInfoCache[packageName]?.name ?? packageName;
 
   Uint8List? iconFor(String packageName) => _appInfoCache[packageName]?.icon;
 
-  /// Adds a newly-picked app to the lock list (if not already present) and
-  /// syncs the native side immediately.
-  Future<void> addLockedApp(String packageName) async {
-    if (apps.any((a) => a.packageName == packageName)) return;
-    apps.add(LockedApp(packageName: packageName));
-    notifyListeners();
-    await _persistApps();
+  Future<void> _syncLockedPackages() async {
     await _usageService.syncLockedPackages(
       apps.where((a) => a.isEnabled).map((a) => a.packageName).toList(),
     );
   }
 
+  /// Adds an app, persists it, and immediately pushes the complete enabled
+  /// package set to Android. The UI remains responsive while the native side
+  /// starts/updates the foreground lock service.
+  Future<void> addLockedApp(String packageName) async {
+    if (apps.any((a) => a.packageName == packageName)) return;
+    apps.add(LockedApp(packageName: packageName));
+    notifyListeners();
+    try {
+      await _persistApps();
+      await _syncLockedPackages();
+    } catch (e) {
+      debugPrint('Kadd: failed to sync newly locked app $packageName: $e');
+      rethrow;
+    }
+  }
+
   Future<void> removeLockedApp(String packageName) async {
+    final previous = List<LockedApp>.from(apps);
     apps.removeWhere((a) => a.packageName == packageName);
     notifyListeners();
-    await _persistApps();
-    await _usageService.syncLockedPackages(
-      apps.where((a) => a.isEnabled).map((a) => a.packageName).toList(),
-    );
+    try {
+      await _persistApps();
+      await _syncLockedPackages();
+    } catch (e) {
+      apps = previous;
+      notifyListeners();
+      debugPrint('Kadd: failed to sync removed app $packageName: $e');
+      rethrow;
+    }
   }
 
   Future<void> _loadFromDisk() async {
@@ -170,7 +197,6 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Prayer time fetch failed: $e');
-      // Fall back gracefully — do not block the rest of the app on network.
     }
   }
 
@@ -181,19 +207,25 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> toggleApp(LockedApp app, bool value) async {
+    final previous = app.isEnabled;
     app.isEnabled = value;
     notifyListeners();
-    await _persistApps();
-    await _usageService.syncLockedPackages(
-      apps.where((a) => a.isEnabled).map((a) => a.packageName).toList(),
-    );
+    try {
+      await _persistApps();
+      await _syncLockedPackages();
+    } catch (e) {
+      app.isEnabled = previous;
+      notifyListeners();
+      debugPrint('Kadd: failed to sync app toggle ${app.packageName}: $e');
+      rethrow;
+    }
   }
 
   Future<void> togglePrayer(PrayerSetting p, bool value) async {
     p.enabled = value;
     notifyListeners();
     await _persistEnabledPrayers();
-    await refreshPrayerTimes(); // re-schedules native alarms
+    await refreshPrayerTimes();
   }
 
   Future<void> setDelayMinutes(int minutes) async {
@@ -203,7 +235,6 @@ class AppState extends ChangeNotifier {
     await refreshPrayerTimes();
   }
 
-  /// Called by RepCameraScreen once the target rep count is reached.
   Future<void> onRepsVerified(LockedApp app) async {
     repsThisWeek += app.repsFor(difficulty);
     minutesEarnedToday += app.minutesGranted;
@@ -211,12 +242,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     await _usageService.grantTemporaryUnlock(app.packageName, app.minutesGranted);
     await _persistStats();
-    // Interstitial only here, never after the prayer-rug unlock below —
-    // putting an ad right after a prayer moment would be tone-deaf.
     AdsService.instance.maybeShowInterstitialAfterUnlock();
   }
 
-  /// Called by RugScanScreen once the classifier confirms a prayer rug.
   Future<void> onRugVerified() async {
     _bumpStreak();
     notifyListeners();
@@ -225,7 +253,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _bumpStreak() {
-    final todayIndex = DateTime.now().weekday % 7; // 0 = Sunday
+    final todayIndex = DateTime.now().weekday % 7;
     last7Days[todayIndex] = true;
     if (!last7Days.contains(false)) streakDays += 1;
   }
