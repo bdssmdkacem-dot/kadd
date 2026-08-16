@@ -16,6 +16,24 @@ android {
         versionName flutter.versionName
     }
 
+    // The APK distributed from GitHub Actions must be signed. Until a
+    // production keystore is configured, use Android's generated debug key
+    // for the release artifact so Android devices can install the APK.
+    signingConfigs {
+        release {
+            storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')
+            storePassword 'android'
+            keyAlias 'AndroidDebugKey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
