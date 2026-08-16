@@ -31,7 +31,7 @@ object LockPrefs {
 
     fun isCurrentlyUnlocked(context: Context, packageName: String): Boolean {
         val until = prefs(context).getLong("unlock_until_$packageName", 0L)
-        return System.currentTimeMillis() < until || isAthanLockLifted(context)
+        return System.currentTimeMillis() < until
     }
 
     /** Set by AthanAlarmScheduler's receiver when the lock window begins. */
@@ -51,8 +51,6 @@ object LockPrefs {
     fun grantAthanUnlockForCurrentWindow(context: Context) {
         prefs(context).edit().putBoolean(KEY_ATHAN_LOCK_ACTIVE, false).apply()
     }
-
-    private fun isAthanLockLifted(context: Context): Boolean = !isAthanLockActive(context)
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
