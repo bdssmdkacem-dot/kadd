@@ -18,11 +18,6 @@ import androidx.core.app.NotificationCompat
  * if it's a locked package with no active unlock window, launches
  * LockActivity (a thin native Activity that hosts the Flutter
  * RepCameraScreen / PrayerLockScreen route) full-screen on top of it.
- *
- * Chosen over AccessibilityService deliberately — see AppUsageService's
- * Dart-side doc comment for the Play Store policy reasoning. The tradeoff:
- * polling has up to ~1s latency and a small battery cost, both acceptable
- * for this use case.
  */
 class LockForegroundService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -63,11 +58,18 @@ class LockForegroundService : Service() {
                 foreground = event.packageName
             }
         }
-        if (foreground == null || foreground == lastForegroundPackage) return
-        lastForegroundPackage = foreground
+        if (foreground == null) return
 
         val locked = LockPrefs.getLockedPackages(this)
-        if (foreground in locked && !LockPrefs.isCurrentlyUnlocked(this, foreground)) {
+        val isLockedPackage = foreground in locked
+        val isUnlocked = LockPrefs.isCurrentlyUnlocked(this, foreground)
+
+        // Keep the cache only as an optimization. If an unlock window expires
+        // while the user remains in the same app, we must still detect it.
+        if (foreground == lastForegroundPackage && (!isLockedPackage || isUnlocked)) return
+        lastForegroundPackage = foreground
+
+        if (isLockedPackage && !isUnlocked) {
             val lockIntent = Intent(this, LockActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 putExtra("packageName", foreground)
