@@ -50,7 +50,9 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-        <receiver android:name=".AthanAlarmScheduler$Receiver" android:exported="false" />
+        <receiver
+            android:name=".AthanLockReceiver"
+            android:exported="false" />
         <meta-data android:name="flutterEmbedding" android:value="2" />
     </application>
 </manifest>
