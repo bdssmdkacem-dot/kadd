@@ -40,6 +40,25 @@ jobs:
       - name: Generate launcher icons
         run: flutter pub run flutter_launcher_icons
 
+      # A release APK without a signing certificate is rejected by Android as
+      # an invalid package. Create the standard Android debug key on the CI
+      # runner when it does not already exist; build.gradle uses this key for
+      # the installable release artifact until a production keystore is added.
+      - name: Ensure Android signing key exists
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias AndroidDebugKey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Diagnostics
         if: always()
         run: |
