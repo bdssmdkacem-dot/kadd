@@ -29,11 +29,13 @@ class HomeScreen extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               children: [
-                RichText(
-                  text: TextSpan(children: [
-                    TextSpan(text: 'كدّ', style: AppTextStyles.kufi(size: 22, weight: FontWeight.w900)),
-                    TextSpan(text: '.', style: AppTextStyles.kufi(size: 22, color: AppColors.signal)),
-                  ]),
+                Center(
+                  child: Image.asset(
+                    'assets/icon/icon.png',
+                    width: 92,
+                    height: 92,
+                    fit: BoxFit.contain,
+                  ),
                 ),
                 Text('${lockedApps.length} تطبيقات مقفلة الآن',
                     style: AppTextStyles.body(size: 12, color: AppColors.textFaint)),
