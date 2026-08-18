@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -61,6 +62,9 @@ class AppState extends ChangeNotifier {
       debugPrint('Kadd: initial lock sync failed: $e\n$st');
     }
 
+    // PackageManager can be queried immediately, but some OEM Android builds
+    // need the first activity lifecycle to settle. Retry instead of permanently
+    // caching an empty app list during startup.
     await loadAvailableApps();
   }
 
@@ -75,10 +79,21 @@ class AppState extends ChangeNotifier {
     loadingAvailableApps = true;
     notifyListeners();
     try {
-      availableApps = await _installedAppsService.getLaunchableApps(forceRefresh: forceRefresh);
+      for (var attempt = 0; attempt < 3; attempt++) {
+        availableApps = await _installedAppsService.getLaunchableApps(
+          forceRefresh: forceRefresh || attempt > 0,
+        );
+        if (availableApps.isNotEmpty) break;
+        if (attempt < 2) {
+          await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
+        }
+      }
+
       _appInfoCache
         ..clear()
         ..addEntries(availableApps.map((info) => MapEntry(info.packageName, info)));
+
+      debugPrint('Kadd: Flutter received ${availableApps.length} available apps');
     } finally {
       loadingAvailableApps = false;
       notifyListeners();
