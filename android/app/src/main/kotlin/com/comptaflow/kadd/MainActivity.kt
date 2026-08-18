@@ -3,6 +3,8 @@ package com.comptaflow.kadd
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Process
@@ -27,9 +29,9 @@ class MainActivity : FlutterActivity() {
                 }
                 "getLaunchableApps" -> {
                     try {
-                        result.success(getLaunchableApps())
+                        result.success(discoverApps())
                     } catch (e: Exception) {
-                        result.error("APP_LIST_ERROR", e.message, null)
+                        result.error("APP_LIST_ERROR", e.stackTraceToString(), null)
                     }
                 }
                 "syncLockedPackages" -> {
@@ -57,32 +59,60 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun getLaunchableApps(): List<Map<String, Any?>> {
+    private fun discoverApps(): List<Map<String, Any?>> {
+        val byPackage = linkedMapOf<String, Map<String, Any?>>()
+        val ownPackage = applicationContext.packageName
+
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
-        val resolved = packageManager.queryIntentActivities(
-            launcherIntent,
-            android.content.pm.PackageManager.MATCH_ALL
-        )
+        val launcherFlags = if (android.os.Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
 
-        val all = resolved.mapNotNull { info ->
-            val appInfo = info.activityInfo?.applicationInfo ?: return@mapNotNull null
-            if (appInfo.packageName == applicationContext.packageName) return@mapNotNull null
-            val label = appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
-            if (label.isEmpty()) return@mapNotNull null
-            val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-            mapOf<String, Any?>(
-                "name" to label,
-                "packageName" to appInfo.packageName,
-                "icon" to drawableToPng(appInfo.loadIcon(packageManager)),
-                "isSystemApp" to isSystem,
-            )
-        }.distinctBy { it["packageName"] as String }
+        try {
+            packageManager.queryIntentActivities(launcherIntent, launcherFlags).forEach { info ->
+                val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
+                if (appInfo.packageName == ownPackage) return@forEach
+                addApp(byPackage, appInfo)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("Kadd", "Launcher query failed: ${e.message}")
+        }
 
+        // Vendor-ROM fallback: enumerate installed packages and keep packages
+        // that Android itself says can be launched.
+        if (byPackage.isEmpty()) {
+            val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstalledApplications(0)
+            }
+            installed.forEach { appInfo ->
+                if (appInfo.packageName == ownPackage) return@forEach
+                if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) {
+                    addApp(byPackage, appInfo)
+                }
+            }
+        }
+
+        val all = byPackage.values.toList()
         val userApps = all.filter { it["isSystemApp"] != true }
-        val result = if (userApps.isNotEmpty()) userApps else all
-        return result.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
+        val chosen = if (userApps.isNotEmpty()) userApps else all
+        return chosen.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
+    }
+
+    private fun addApp(destination: MutableMap<String, Map<String, Any?>>, appInfo: ApplicationInfo) {
+        val packageName = appInfo.packageName
+        if (destination.containsKey(packageName)) return
+        val label = appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+        if (label.isEmpty()) return
+        val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+        destination[packageName] = mapOf(
+            "name" to label,
+            "packageName" to packageName,
+            "icon" to drawableToPng(appInfo.loadIcon(packageManager)),
+            "isSystemApp" to isSystem,
+        )
     }
 
     private fun drawableToPng(drawable: android.graphics.drawable.Drawable): ByteArray? {
