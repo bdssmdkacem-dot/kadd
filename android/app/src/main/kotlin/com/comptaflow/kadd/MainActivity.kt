@@ -31,6 +31,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         result.success(discoverApps())
                     } catch (e: Exception) {
+                        android.util.Log.e("Kadd", "App discovery failed", e)
                         result.error("APP_LIST_ERROR", e.stackTraceToString(), null)
                     }
                 }
@@ -59,53 +60,77 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Build the picker from the complete installed-application inventory.
+     * Kadd needs to let the user choose apps to lock, so a launcher-only
+     * query is intentionally NOT the source of truth.
+     */
     private fun discoverApps(): List<Map<String, Any?>> {
         val byPackage = linkedMapOf<String, Map<String, Any?>>()
         val ownPackage = applicationContext.packageName
 
-        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
+        val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            packageManager.getInstalledApplications(
+                PackageManager.ApplicationInfoFlags.of(0L)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstalledApplications(0)
         }
-        val launcherFlags = if (android.os.Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
 
+        android.util.Log.d("Kadd", "PackageManager installed applications: ${installed.size}")
+
+        installed.forEach { appInfo ->
+            if (appInfo.packageName == ownPackage) return@forEach
+            if ((appInfo.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@forEach
+            addApp(byPackage, appInfo)
+        }
+
+        // Extra launcher discovery is only a supplement. It catches launcher
+        // activities exposed by vendor packages that may have unusual flags.
         try {
-            packageManager.queryIntentActivities(launcherIntent, launcherFlags).forEach { info ->
+            val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            packageManager.queryIntentActivities(
+                launcherIntent,
+                if (android.os.Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
+            ).forEach { info ->
                 val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
                 if (appInfo.packageName == ownPackage) return@forEach
                 addApp(byPackage, appInfo)
             }
         } catch (e: Exception) {
-            android.util.Log.w("Kadd", "Launcher query failed: ${e.message}")
-        }
-
-        // Vendor-ROM fallback: enumerate installed packages and keep packages
-        // that Android itself says can be launched.
-        if (byPackage.isEmpty()) {
-            val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
-                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getInstalledApplications(0)
-            }
-            installed.forEach { appInfo ->
-                if (appInfo.packageName == ownPackage) return@forEach
-                if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) {
-                    addApp(byPackage, appInfo)
-                }
-            }
+            android.util.Log.w("Kadd", "Launcher supplement failed", e)
         }
 
         val all = byPackage.values.toList()
+        android.util.Log.d("Kadd", "Kadd discovered ${all.size} installed apps")
+
+        // Prefer normal user-installed apps. If the ROM marks everything as a
+        // system app, fall back to the complete discovered list instead of 0.
         val userApps = all.filter { it["isSystemApp"] != true }
         val chosen = if (userApps.isNotEmpty()) userApps else all
-        return chosen.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
+
+        return chosen.sortedBy {
+            (it["name"] as String).lowercase(Locale.getDefault())
+        }
     }
 
-    private fun addApp(destination: MutableMap<String, Map<String, Any?>>, appInfo: ApplicationInfo) {
+    private fun addApp(
+        destination: MutableMap<String, Map<String, Any?>>,
+        appInfo: ApplicationInfo,
+    ) {
         val packageName = appInfo.packageName
         if (destination.containsKey(packageName)) return
-        val label = appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+
+        val label = try {
+            appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
         if (label.isEmpty()) return
+
         val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
         destination[packageName] = mapOf(
             "name" to label,
