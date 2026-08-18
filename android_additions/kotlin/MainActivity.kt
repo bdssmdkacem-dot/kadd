@@ -3,6 +3,8 @@ package com.comptaflow.kadd
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Process
@@ -28,9 +30,9 @@ class MainActivity : FlutterActivity() {
                 }
                 "getLaunchableApps" -> {
                     try {
-                        result.success(getLaunchableApps())
+                        result.success(discoverApps())
                     } catch (e: Exception) {
-                        result.error("APP_LIST_ERROR", e.message, null)
+                        result.error("APP_LIST_ERROR", e.stackTraceToString(), null)
                     }
                 }
                 "syncLockedPackages" -> {
@@ -62,54 +64,83 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Returns the apps that Android's launcher can actually open.
-     *
-     * This intentionally uses PackageManager directly instead of relying on
-     * plugin-side filtering. ACTION_MAIN + CATEGORY_LAUNCHER is the same
-     * discovery pattern Android uses for launcher apps, and QUERY_ALL_PACKAGES
-     * is declared in the manifest for Android 11+ package visibility.
+     * Discover real user applications without depending on the installed_apps
+     * Flutter plugin. Some Android/Huawei builds can return an empty launcher
+     * query, so we use two independent PackageManager strategies and merge them.
      */
-    private fun getLaunchableApps(): List<Map<String, Any?>> {
+    private fun discoverApps(): List<Map<String, Any?>> {
+        val byPackage = linkedMapOf<String, Map<String, Any?>>()
+        val ownPackage = applicationContext.packageName
+
+        // Strategy 1: applications that expose a launcher activity.
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
 
-        val resolved = packageManager.queryIntentActivities(
-            launcherIntent,
-            android.content.pm.PackageManager.MATCH_ALL
-        )
+        val launcherFlags = if (android.os.Build.VERSION.SDK_INT >= 23) {
+            PackageManager.MATCH_ALL
+        } else {
+            0
+        }
 
-        val all = resolved
-            .mapNotNull { info ->
-                val appInfo = info.activityInfo?.applicationInfo ?: return@mapNotNull null
-                val packageName = appInfo.packageName
-                if (packageName == packageNameOfThisApp()) return@mapNotNull null
-
-                val label = appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
-                if (label.isEmpty()) return@mapNotNull null
-
-                val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                mapOf<String, Any?>(
-                    "name" to label,
-                    "packageName" to packageName,
-                    "icon" to drawableToPng(appInfo.loadIcon(packageManager)),
-                    "isSystemApp" to isSystem,
-                )
+        try {
+            packageManager.queryIntentActivities(launcherIntent, launcherFlags).forEach { resolveInfo ->
+                val appInfo = resolveInfo.activityInfo?.applicationInfo ?: return@forEach
+                if (appInfo.packageName == ownPackage) return@forEach
+                addApp(byPackage, appInfo)
             }
-            .distinctBy { it["packageName"] as String }
+        } catch (e: Exception) {
+            android.util.Log.w("Kadd", "Launcher query failed: ${e.message}")
+        }
 
-        // Prefer user-installed apps. If a vendor reports every launcher as a
-        // system package, fall back to all launchable apps rather than showing
-        // an empty picker like the old implementation did.
+        // Strategy 2: enumerate installed applications and keep those for
+        // which Android can actually create a launch intent. This is a robust
+        // fallback on vendor ROMs where queryIntentActivities can be filtered.
+        if (byPackage.isEmpty()) {
+            val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstalledApplications(0)
+            }
+
+            installed.forEach { appInfo ->
+                if (appInfo.packageName == ownPackage) return@forEach
+                if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) {
+                    addApp(byPackage, appInfo)
+                }
+            }
+        }
+
+        // Never hide everything just because a vendor marks applications as
+        // system apps. Kadd needs a useful picker, not a permanently empty one.
+        val all = byPackage.values.toList()
         val userApps = all.filter { it["isSystemApp"] != true }
-        val result = if (userApps.isNotEmpty()) userApps else all
+        val chosen = if (userApps.isNotEmpty()) userApps else all
 
-        return result.sortedBy {
+        return chosen.sortedBy {
             (it["name"] as String).lowercase(Locale.getDefault())
         }
     }
 
-    private fun packageNameOfThisApp(): String = applicationContext.packageName
+    private fun addApp(
+        destination: MutableMap<String, Map<String, Any?>>,
+        appInfo: ApplicationInfo,
+    ) {
+        val packageName = appInfo.packageName
+        if (destination.containsKey(packageName)) return
+
+        val label = appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+        if (label.isEmpty()) return
+
+        val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+        destination[packageName] = mapOf(
+            "name" to label,
+            "packageName" to packageName,
+            "icon" to drawableToPng(appInfo.loadIcon(packageManager)),
+            "isSystemApp" to isSystem,
+        )
+    }
 
     private fun drawableToPng(drawable: android.graphics.drawable.Drawable): ByteArray? {
         return try {
