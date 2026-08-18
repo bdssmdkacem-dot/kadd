@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:installed_apps/app_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/city.dart';
+import '../models/installed_app.dart';
 import '../models/locked_app.dart';
 import '../models/prayer.dart';
 import '../services/app_usage_service.dart';
@@ -26,9 +26,9 @@ class AppState extends ChangeNotifier {
 
   bool hasUsageAccess = false;
 
-  List<AppInfo> availableApps = [];
+  List<InstalledApp> availableApps = [];
   bool loadingAvailableApps = false;
-  final Map<String, AppInfo> _appInfoCache = {};
+  final Map<String, InstalledApp> _appInfoCache = {};
 
   Object? get availableAppsError => _installedAppsService.lastError;
 
@@ -37,8 +37,6 @@ class AppState extends ChangeNotifier {
   final InstalledAppsService _installedAppsService = InstalledAppsService();
 
   Future<void> init() async {
-    // Each startup subsystem is isolated. A native lock-service failure must
-    // never stop the installed-app picker (or the rest of the UI) loading.
     try {
       await _loadFromDisk();
     } catch (e, st) {
@@ -57,8 +55,6 @@ class AppState extends ChangeNotifier {
       debugPrint('Kadd: usage access initialization failed: $e\n$st');
     }
 
-    // Sync existing locks only after the UI/permissions are initialized.
-    // Failure here is reported but does not prevent app discovery.
     try {
       await _syncLockedPackages();
     } catch (e, st) {
@@ -80,9 +76,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       availableApps = await _installedAppsService.getLaunchableApps(forceRefresh: forceRefresh);
-      for (final info in availableApps) {
-        _appInfoCache[info.packageName] = info;
-      }
+      _appInfoCache
+        ..clear()
+        ..addEntries(availableApps.map((info) => MapEntry(info.packageName, info)));
     } finally {
       loadingAvailableApps = false;
       notifyListeners();
@@ -99,9 +95,6 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  /// Adds an app, persists it, and immediately pushes the complete enabled
-  /// package set to Android. The UI remains responsive while the native side
-  /// starts/updates the foreground lock service.
   Future<void> addLockedApp(String packageName) async {
     if (apps.any((a) => a.packageName == packageName)) return;
     apps.add(LockedApp(packageName: packageName));
