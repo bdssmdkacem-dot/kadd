@@ -20,7 +20,6 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
                 "hasUsageAccess" -> result.success(hasUsageAccess())
@@ -32,6 +31,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         result.success(discoverApps())
                     } catch (e: Exception) {
+                        android.util.Log.e("Kadd", "App discovery failed", e)
                         result.error("APP_LIST_ERROR", e.stackTraceToString(), null)
                     }
                 }
@@ -42,9 +42,7 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "grantTemporaryUnlock" -> {
-                    val pkg = call.argument<String>("packageName")!!
-                    val minutes = call.argument<Int>("minutes")!!
-                    LockPrefs.grantUnlockUntil(this, pkg, minutes)
+                    LockPrefs.grantUnlockUntil(this, call.argument<String>("packageName")!!, call.argument<Int>("minutes")!!)
                     result.success(null)
                 }
                 "grantAthanUnlock" -> {
@@ -54,8 +52,7 @@ class MainActivity : FlutterActivity() {
                 "scheduleAthanLocks" -> {
                     @Suppress("UNCHECKED_CAST")
                     val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
-                    val delayMinutes = call.argument<Int>("delayMinutes") ?: 5
-                    AthanAlarmScheduler.schedule(this, prayers, delayMinutes)
+                    AthanAlarmScheduler.schedule(this, prayers, call.argument<Int>("delayMinutes") ?: 5)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -63,58 +60,47 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /**
-     * Discover real user applications without depending on the installed_apps
-     * Flutter plugin. Some Android/Huawei builds can return an empty launcher
-     * query, so we use two independent PackageManager strategies and merge them.
-     */
+    /** Build the picker from the complete installed-application inventory. */
     private fun discoverApps(): List<Map<String, Any?>> {
         val byPackage = linkedMapOf<String, Map<String, Any?>>()
         val ownPackage = applicationContext.packageName
 
-        // Strategy 1: applications that expose a launcher activity.
-        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
+        val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            packageManager.getInstalledApplications(
+                PackageManager.ApplicationInfoFlags.of(0L)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstalledApplications(0)
         }
 
-        val launcherFlags = if (android.os.Build.VERSION.SDK_INT >= 23) {
-            PackageManager.MATCH_ALL
-        } else {
-            0
+        android.util.Log.d("Kadd", "PackageManager installed applications: ${installed.size}")
+
+        installed.forEach { appInfo ->
+            if (appInfo.packageName == ownPackage) return@forEach
+            if ((appInfo.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@forEach
+            addApp(byPackage, appInfo)
         }
 
         try {
-            packageManager.queryIntentActivities(launcherIntent, launcherFlags).forEach { resolveInfo ->
-                val appInfo = resolveInfo.activityInfo?.applicationInfo ?: return@forEach
+            val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            packageManager.queryIntentActivities(
+                launcherIntent,
+                if (android.os.Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
+            ).forEach { info ->
+                val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
                 if (appInfo.packageName == ownPackage) return@forEach
                 addApp(byPackage, appInfo)
             }
         } catch (e: Exception) {
-            android.util.Log.w("Kadd", "Launcher query failed: ${e.message}")
+            android.util.Log.w("Kadd", "Launcher supplement failed", e)
         }
 
-        // Strategy 2: enumerate installed applications and keep those for
-        // which Android can actually create a launch intent. This is a robust
-        // fallback on vendor ROMs where queryIntentActivities can be filtered.
-        if (byPackage.isEmpty()) {
-            val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
-                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getInstalledApplications(0)
-            }
-
-            installed.forEach { appInfo ->
-                if (appInfo.packageName == ownPackage) return@forEach
-                if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) {
-                    addApp(byPackage, appInfo)
-                }
-            }
-        }
-
-        // Never hide everything just because a vendor marks applications as
-        // system apps. Kadd needs a useful picker, not a permanently empty one.
         val all = byPackage.values.toList()
+        android.util.Log.d("Kadd", "Kadd discovered ${all.size} installed apps")
+
         val userApps = all.filter { it["isSystemApp"] != true }
         val chosen = if (userApps.isNotEmpty()) userApps else all
 
@@ -130,7 +116,11 @@ class MainActivity : FlutterActivity() {
         val packageName = appInfo.packageName
         if (destination.containsKey(packageName)) return
 
-        val label = appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+        val label = try {
+            appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
         if (label.isEmpty()) return
 
         val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
@@ -161,11 +151,10 @@ class MainActivity : FlutterActivity() {
 
     private fun hasUsageAccess(): Boolean {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        val mode = appOps.checkOpNoThrow(
+        return appOps.checkOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
             Process.myUid(),
             packageName
-        )
-        return mode == AppOpsManager.MODE_ALLOWED
+        ) == AppOpsManager.MODE_ALLOWED
     }
 }
