@@ -34,9 +34,17 @@ class AppState extends ChangeNotifier {
 
   Object? get availableAppsError => _installedAppsService.lastError;
 
-  final PrayerTimesService _prayerTimesService = PrayerTimesService();
-  final AppUsageService _usageService = AppUsageService();
-  final InstalledAppsService _installedAppsService = InstalledAppsService();
+  final PrayerTimesService _prayerTimesService;
+  final AppUsageService _usageService;
+  final InstalledAppsService _installedAppsService;
+
+  AppState({
+    PrayerTimesService? prayerTimesService,
+    AppUsageService? usageService,
+    InstalledAppsService? installedAppsService,
+  })  : _prayerTimesService = prayerTimesService ?? PrayerTimesService(),
+        _usageService = usageService ?? AppUsageService(),
+        _installedAppsService = installedAppsService ?? InstalledAppsService();
 
   Future<void> init() async {
     try {
