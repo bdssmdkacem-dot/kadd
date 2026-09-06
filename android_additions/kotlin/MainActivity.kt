@@ -38,12 +38,22 @@ class MainActivity : FlutterActivity() {
                 "syncLockedPackages" -> {
                     val packages = call.argument<List<String>>("packages") ?: emptyList()
                     LockPrefs.setLockedPackages(this, packages)
-                    LockForegroundService.ensureRunning(this)
+                    if (packages.isEmpty()) {
+                        stopService(Intent(this, LockForegroundService::class.java))
+                    } else {
+                        LockForegroundService.ensureRunning(this)
+                    }
                     result.success(null)
                 }
                 "grantTemporaryUnlock" -> {
-                    LockPrefs.grantUnlockUntil(this, call.argument<String>("packageName")!!, call.argument<Int>("minutes")!!)
-                    result.success(null)
+                    val packageName = call.argument<String>("packageName")
+                    val minutes = call.argument<Int>("minutes")
+                    if (packageName.isNullOrBlank() || minutes == null) {
+                        result.error("INVALID_UNLOCK", "packageName and minutes are required", null)
+                    } else {
+                        LockPrefs.grantUnlockUntil(this, packageName, minutes)
+                        result.success(null)
+                    }
                 }
                 "grantAthanUnlock" -> {
                     LockPrefs.grantAthanUnlockForCurrentWindow(this)
