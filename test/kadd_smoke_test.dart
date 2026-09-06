@@ -6,8 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:kadd/main.dart';
 import 'package:kadd/state/app_state.dart';
 
-afterAll(() {});
-
 void main() {
   setUpAll(() async {
     await initializeDateFormatting('ar');
@@ -34,15 +32,26 @@ void main() {
 
     expect(home, findsOneWidget);
     expect(prayer, findsOneWidget);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+    );
 
     await tester.tap(prayer);
     await tester.pump();
 
-    expect(find.text('إعدادات الصلاة'), findsOneWidget);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      2,
+    );
+    expect(find.text('أي صلاة تريد الالتزام بها؟'), findsOneWidget);
 
     await tester.tap(home);
     await tester.pump();
 
-    expect(find.text('كدّ'), findsOneWidget);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+    );
   });
 }
