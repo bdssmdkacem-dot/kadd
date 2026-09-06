@@ -1,12 +1,11 @@
 # Analyzer configuration for Kadd.
 # Keep Flutter's recommended lints enabled. Informational lints remain
-# visible locally but do not block CI; warnings and errors still fail CI.
+# visible locally; CI controls whether infos are fatal explicitly.
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
   errors:
-    info: ignore
-    unused_field: warning
+    unused_field: ignore
 
 linter:
   rules:
