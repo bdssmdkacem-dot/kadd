@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -15,12 +16,11 @@ import android.os.Looper
 import androidx.core.app.NotificationCompat
 
 /**
- * Watches the real foreground package and opens LockActivity whenever a
- * protected package becomes visible without a valid temporary unlock.
+ * Owns the Android-side enforcement loop for Kadd app locks.
  *
- * We intentionally do NOT depend only on MOVE_TO_FOREGROUND events: on some
- * Android/OEM builds those events are not emitted during a short polling
- * window. queryUsageStats() gives us the package that was most recently used.
+ * UsageEvents is preferred because it represents foreground transitions. The
+ * UsageStats query is only a fallback for devices/OEMs where events are sparse.
+ * No AccessibilityService is used.
  */
 class LockForegroundService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -28,7 +28,7 @@ class LockForegroundService : Service() {
     private val pollRunnable = object : Runnable {
         override fun run() {
             checkForegroundApp()
-            handler.postDelayed(this, 750)
+            handler.postDelayed(this, POLL_INTERVAL_MS)
         }
     }
 
@@ -49,16 +49,15 @@ class LockForegroundService : Service() {
 
     private fun checkForegroundApp() {
         val locked = LockPrefs.getLockedPackages(this)
-        if (locked.isEmpty()) return
+        if (locked.isEmpty()) {
+            stopSelf()
+            return
+        }
 
         val foreground = findForegroundPackage() ?: return
-        if (foreground == packageName) return
-        if (foreground !in locked) return
+        if (foreground == packageName || foreground !in locked) return
         if (LockPrefs.isCurrentlyUnlocked(this, foreground)) return
 
-        // Launching the lock screen is the actual enforcement point. Do not
-        // cache the package: the same app must be lockable again immediately
-        // after its temporary unlock window expires.
         val lockIntent = Intent(this, LockActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -70,39 +69,43 @@ class LockForegroundService : Service() {
         try {
             startActivity(lockIntent)
         } catch (_: Exception) {
-            // Some OEMs briefly reject activity launches while changing tasks.
-            // The next poll retries automatically.
+            // The next poll retries if Android/OEM task policy temporarily
+            // rejects the launch while the foreground task is changing.
         }
     }
 
     private fun findForegroundPackage(): String? {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val end = System.currentTimeMillis()
+        val start = end - LOOKBACK_MS
 
-        // Primary method: latest lastTimeUsed in a short window.
+        // Prefer actual foreground transitions. ACTIVITY_RESUMED is the modern
+        // signal; MOVE_TO_FOREGROUND covers older Android releases.
+        val events = usm.queryEvents(start, end)
+        val event = UsageEvents.Event()
+        var foreground: String? = null
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                    event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
+            ) {
+                if (event.packageName.isNotBlank()) foreground = event.packageName
+            }
+        }
+        if (foreground != null) return foreground
+
+        // Fallback for OEMs that expose stats but not recent events.
         val stats: List<UsageStats> = usm.queryUsageStats(
             UsageStatsManager.INTERVAL_BEST,
-            end - 15_000L,
+            start,
             end
         ) ?: emptyList()
-        val latest = stats
+        return stats
             .asSequence()
             .filter { it.packageName.isNotBlank() }
             .maxByOrNull { it.lastTimeUsed }
             ?.packageName
-        if (latest != null) return latest
-
-        // Fallback for devices where queryUsageStats is sparse.
-        val events = usm.queryEvents(end - 15_000L, end)
-        val event = android.app.usage.UsageEvents.Event()
-        var foreground: String? = null
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            if (event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                foreground = event.packageName
-            }
-        }
-        return foreground
     }
 
     private fun buildNotification(): android.app.Notification {
@@ -132,6 +135,8 @@ class LockForegroundService : Service() {
 
     companion object {
         private const val NOTIF_ID = 1001
+        private const val POLL_INTERVAL_MS = 750L
+        private const val LOOKBACK_MS = 15_000L
 
         fun ensureRunning(context: Context) {
             val intent = Intent(context, LockForegroundService::class.java)
