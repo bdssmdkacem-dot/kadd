@@ -1,15 +1,17 @@
 import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:installed_apps/installed_apps.dart';
+
 import '../models/installed_app.dart';
 
-/// Discovers launchable Android apps through PackageManager.
+/// Discovers user-facing Android apps that Kadd can lock.
 ///
-/// The previous implementation delegated the complete list to the
-/// `installed_apps` plugin. On some Android 11+ devices that combination of
-/// package-visibility and plugin-side filtering returned an empty list even
-/// though the launcher showed installed apps. Kadd only needs launchable apps,
-/// so we query Android's launcher intent directly instead.
+/// The plugin is used as the primary source because it handles Android's
+/// package-visibility rules and launchability filtering. The native channel
+/// remains as a fallback so an OEM-specific plugin failure does not leave the
+/// picker permanently empty.
 class InstalledAppsService {
   static const MethodChannel _channel = MethodChannel('com.comptaflow.kadd/lock');
 
@@ -19,6 +21,42 @@ class InstalledAppsService {
   Future<List<InstalledApp>> getLaunchableApps({bool forceRefresh = false}) async {
     if (_cache != null && !forceRefresh) return _cache!;
 
+    Object? pluginError;
+    try {
+      final rawApps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: true,
+        excludeNonLaunchableApps: true,
+        withIcon: true,
+      );
+
+      final apps = rawApps
+          .where((app) => app.packageName.isNotEmpty && app.name.trim().isNotEmpty)
+          .map(
+            (app) => InstalledApp(
+              name: app.name.trim(),
+              packageName: app.packageName,
+              icon: app.icon,
+              isSystemApp: false,
+            ),
+          )
+          .toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+      if (apps.isNotEmpty) {
+        _cache = apps;
+        lastError = null;
+        debugPrint('Kadd: installed_apps discovered ${apps.length} launchable apps');
+        return apps;
+      }
+
+      pluginError = StateError('installed_apps returned no launchable applications');
+    } catch (e, st) {
+      pluginError = e;
+      debugPrint('Kadd: installed_apps discovery failed: $e\n$st');
+    }
+
+    // Fallback to Kadd's native PackageManager implementation. This is useful
+    // on vendor ROMs where the plugin may fail to enumerate launchable apps.
     try {
       final raw = await _channel.invokeMethod<List<dynamic>>('getLaunchableApps');
       final apps = <InstalledApp>[];
@@ -50,12 +88,12 @@ class InstalledAppsService {
 
       apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       _cache = apps;
-      lastError = null;
-      debugPrint('Kadd: discovered ${apps.length} launchable apps');
+      lastError = apps.isEmpty ? (pluginError ?? StateError('No launchable apps found')) : null;
+      debugPrint('Kadd: native fallback discovered ${apps.length} launchable apps');
       return apps;
     } catch (e, st) {
       lastError = e;
-      debugPrint('InstalledAppsService.getLaunchableApps failed: $e\n$st');
+      debugPrint('Kadd: native app discovery fallback failed: $e\n$st');
       return [];
     }
   }
