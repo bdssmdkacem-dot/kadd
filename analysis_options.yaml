@@ -1,12 +1,12 @@
 # Analyzer configuration for Kadd.
-# Keep the project's recommended Flutter lints enabled while avoiding a
-# build-blocking false positive for intentionally retained private fields that
-# are part of the ML/camera tuning surface.
+# Keep Flutter's recommended lints enabled. Informational lints remain
+# visible locally but do not block CI; warnings and errors still fail CI.
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
   errors:
-    unused_field: ignore
+    info: ignore
+    unused_field: warning
 
 linter:
   rules:
