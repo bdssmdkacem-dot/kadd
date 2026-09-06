@@ -4,11 +4,8 @@ import android.content.Context
 import java.util.concurrent.TimeUnit
 
 /**
- * Single source of truth for "what's locked right now", read by
- * LockForegroundService on every poll tick and written to by MainActivity's
- * method channel handlers. Kept deliberately simple (SharedPreferences, not
- * a database) since the working set is small: a handful of package names
- * and a handful of timestamps.
+ * Persistent source of truth for Kadd's native lock state.
+ * SharedPreferences is sufficient because the working set is small.
  */
 object LockPrefs {
     private const val PREFS = "kadd_lock_prefs"
@@ -17,24 +14,36 @@ object LockPrefs {
     private const val KEY_ACTIVE_PRAYER_NAME = "active_prayer_name"
 
     fun setLockedPackages(context: Context, packages: List<String>) {
-        prefs(context).edit().putStringSet(KEY_LOCKED_PACKAGES, packages.toSet()).apply()
+        val cleaned = packages.asSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toSet()
+        prefs(context).edit().putStringSet(KEY_LOCKED_PACKAGES, cleaned).apply()
     }
 
     fun getLockedPackages(context: Context): Set<String> =
-        prefs(context).getStringSet(KEY_LOCKED_PACKAGES, emptySet()) ?: emptySet()
+        prefs(context).getStringSet(KEY_LOCKED_PACKAGES, emptySet())?.toSet() ?: emptySet()
 
-    /** Per-package temporary unlock windows, e.g. "unlocked until epoch millis X". */
+    /** Grants a package a temporary unlock window starting now. */
     fun grantUnlockUntil(context: Context, packageName: String, minutes: Int) {
-        val until = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(minutes.toLong())
+        val safeMinutes = minutes.coerceAtLeast(0)
+        val until = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(safeMinutes.toLong())
         prefs(context).edit().putLong("unlock_until_$packageName", until).apply()
     }
 
+    /** Returns true only while the persisted unlock deadline is still in the future. */
     fun isCurrentlyUnlocked(context: Context, packageName: String): Boolean {
-        val until = prefs(context).getLong("unlock_until_$packageName", 0L)
-        return System.currentTimeMillis() < until
+        val key = "unlock_until_$packageName"
+        val until = prefs(context).getLong(key, 0L)
+        val active = System.currentTimeMillis() < until
+        if (!active && until != 0L) {
+            // Remove expired state so a reboot/process restart cannot retain
+            // stale unlock metadata indefinitely.
+            prefs(context).edit().remove(key).apply()
+        }
+        return active
     }
 
-    /** Set by AthanAlarmScheduler's receiver when the lock window begins. */
     fun activateAthanLock(context: Context, prayerName: String) {
         prefs(context).edit()
             .putBoolean(KEY_ATHAN_LOCK_ACTIVE, true)
@@ -52,5 +61,6 @@ object LockPrefs {
         prefs(context).edit().putBoolean(KEY_ATHAN_LOCK_ACTIVE, false).apply()
     }
 
-    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
