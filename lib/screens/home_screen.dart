@@ -70,15 +70,19 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: 18),
                 Center(
                   child: EffortRing(
-                    progress: repsNeeded == 0 ? 0 : 0.3, // TODO: live rep progress from camera screen
+                    // The camera is the source of truth for live repetitions.
+                    // Home must not display fabricated progress, so until the
+                    // session is started we show a neutral ring and the actual
+                    // target for the selected app/difficulty.
+                    progress: 0,
                     center: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text.rich(TextSpan(children: [
-                          TextSpan(text: '7', style: AppTextStyles.kufi(size: 34)),
+                          TextSpan(text: '0', style: AppTextStyles.kufi(size: 34)),
                           TextSpan(text: '/$repsNeeded', style: AppTextStyles.kufi(size: 20, color: AppColors.textFaint)),
                         ])),
-                        Text('ضغطة متبقية', style: AppTextStyles.body(size: 11, color: AppColors.textFaint)),
+                        Text('ضغطات مطلوبة', style: AppTextStyles.body(size: 11, color: AppColors.textFaint)),
                       ],
                     ),
                   ),
