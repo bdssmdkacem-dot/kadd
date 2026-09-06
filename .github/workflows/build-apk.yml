@@ -43,6 +43,7 @@ jobs:
       - name: Generate launcher icons
         run: flutter pub run flutter_launcher_icons
 
+      # Informational lints are reported but are not a CI failure.
       - name: Static analysis
         run: flutter analyze --no-fatal-infos
 
