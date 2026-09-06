@@ -19,8 +19,11 @@ void main() {
       ChangeNotifierProvider<AppState>.value(
         value: state,
         child: const MaterialApp(
-          locale: Locale('ar'),
-          supportedLocales: [Locale('ar')],
+          // Keep framework MaterialLocalizations on a built-in locale. The
+          // production RootNav still renders its real Arabic labels and
+          // Directionality; this is test-only host configuration.
+          locale: Locale('en'),
+          supportedLocales: [Locale('en')],
           home: RootNav(),
         ),
       ),
