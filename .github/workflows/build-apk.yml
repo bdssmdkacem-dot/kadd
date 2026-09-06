@@ -20,14 +20,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # The repository now contains the complete Android project. Do not run
-      # flutter create or patch the manifest at build time: the committed
-      # manifest already contains Kadd's permissions and native components.
       - name: Validate Android platform
         run: |
           test -f android/settings.gradle
           test -f android/app/src/main/AndroidManifest.xml
-          test -f android/app/src/main/kotlin/com/comptaflow/kadd/MainActivity.kt || true
+          test -f android/app/src/main/kotlin/com/comptaflow/kadd/MainActivity.kt
 
       - name: Copy native Kotlin sources into the Android project
         run: |
@@ -40,11 +37,16 @@ jobs:
       - name: Generate launcher icons
         run: flutter pub run flutter_launcher_icons
 
-      # A release APK without a signing certificate is rejected by Android as
-      # an invalid package. Create the standard Android debug key on the CI
-      # runner when it does not already exist; build.gradle uses this key for
-      # the installable release artifact until a production keystore is added.
-      - name: Ensure Android signing key exists
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Flutter tests
+        run: flutter test
+
+      # Development CI artifact only. Production Play distribution must use
+      # a real upload/release key kept outside the repository; the debug key
+      # below is intentionally limited to CI verification/installable builds.
+      - name: Ensure Android debug signing key exists
         run: |
           mkdir -p "$HOME/.android"
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
@@ -58,21 +60,6 @@ jobs:
               -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
-
-      - name: Diagnostics
-        if: always()
-        run: |
-          flutter --version
-          dart --version
-          flutter doctor -v
-          echo "--- Android project ---"
-          find android/app/src/main -maxdepth 5 -type f | sort
-          echo "--- Android manifest ---"
-          cat android/app/src/main/AndroidManifest.xml
-          echo "--- android/settings.gradle ---"
-          cat android/settings.gradle
-          echo "--- android/app/build.gradle ---"
-          cat android/app/build.gradle
 
       - name: Build release APK
         run: flutter build apk --release -v
