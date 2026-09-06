@@ -24,6 +24,7 @@ class AppState extends ChangeNotifier {
   int minutesEarnedToday = 0;
   int streakDays = 0;
   final List<bool> last7Days = List.filled(7, false);
+  final Set<String> _activityDates = <String>{};
 
   bool hasUsageAccess = false;
 
@@ -62,9 +63,6 @@ class AppState extends ChangeNotifier {
       debugPrint('Kadd: initial lock sync failed: $e\n$st');
     }
 
-    // PackageManager can be queried immediately, but some OEM Android builds
-    // need the first activity lifecycle to settle. Retry instead of permanently
-    // caching an empty app list during startup.
     await loadAvailableApps();
   }
 
@@ -143,8 +141,17 @@ class AppState extends ChangeNotifier {
     difficulty = Difficulty.values[prefs.getInt('difficulty') ?? Difficulty.medium.index];
     delayMinutesAfterAthan = prefs.getInt('delayMinutes') ?? 5;
     repsThisWeek = prefs.getInt('repsThisWeek') ?? 0;
-    minutesEarnedToday = prefs.getInt('minutesEarnedToday') ?? 0;
-    streakDays = prefs.getInt('streakDays') ?? 0;
+
+    final todayKey = _dayKey(DateTime.now());
+    minutesEarnedToday = prefs.getString('statsDayKey') == todayKey
+        ? (prefs.getInt('minutesEarnedToday') ?? 0)
+        : 0;
+
+    _activityDates
+      ..clear()
+      ..addAll((prefs.getStringList('activityDates') ?? const <String>[]).where(_isValidDayKey));
+    _pruneActivityDates();
+    _rebuildStreak();
 
     final cityName = prefs.getString('selectedCity');
     if (cityName != null) {
@@ -188,7 +195,7 @@ class AppState extends ChangeNotifier {
   Future<void> setCity(MoroccanCity city) async {
     selectedCity = city;
     notifyListeners();
-    (await SharedPreferences.getInstance()).setString('selectedCity', city.aladhanName);
+    await (await SharedPreferences.getInstance()).setString('selectedCity', city.aladhanName);
     await refreshPrayerTimes();
   }
 
@@ -211,7 +218,7 @@ class AppState extends ChangeNotifier {
   Future<void> setDifficulty(Difficulty d) async {
     difficulty = d;
     notifyListeners();
-    (await SharedPreferences.getInstance()).setInt('difficulty', d.index);
+    await (await SharedPreferences.getInstance()).setInt('difficulty', d.index);
   }
 
   Future<void> toggleApp(LockedApp app, bool value) async {
@@ -239,14 +246,14 @@ class AppState extends ChangeNotifier {
   Future<void> setDelayMinutes(int minutes) async {
     delayMinutesAfterAthan = minutes.clamp(0, 60);
     notifyListeners();
-    (await SharedPreferences.getInstance()).setInt('delayMinutes', delayMinutesAfterAthan);
+    await (await SharedPreferences.getInstance()).setInt('delayMinutes', delayMinutesAfterAthan);
     await refreshPrayerTimes();
   }
 
   Future<void> onRepsVerified(LockedApp app) async {
     repsThisWeek += app.repsFor(difficulty);
     minutesEarnedToday += app.minutesGranted;
-    _bumpStreak();
+    _recordActivityToday();
     notifyListeners();
     await _usageService.grantTemporaryUnlock(app.packageName, app.minutesGranted);
     await _persistStats();
@@ -254,22 +261,59 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> onRugVerified() async {
-    _bumpStreak();
+    _recordActivityToday();
     notifyListeners();
     await _usageService.grantAthanUnlock();
     await _persistStats();
   }
 
-  void _bumpStreak() {
-    final todayIndex = DateTime.now().weekday % 7;
-    last7Days[todayIndex] = true;
-    if (!last7Days.contains(false)) streakDays += 1;
+  void _recordActivityToday() {
+    _activityDates.add(_dayKey(DateTime.now()));
+    _rebuildStreak();
+  }
+
+  void _rebuildStreak() {
+    final today = DateTime.now();
+    final todayKey = _dayKey(today);
+    final days = List<bool>.generate(
+      7,
+      (index) => _activityDates.contains(_dayKey(today.subtract(Duration(days: index)))),
+    );
+    last7Days
+      ..clear()
+      ..addAll(days.reversed);
+
+    var streak = 0;
+    for (var i = 0; i < 91; i++) {
+      if (!_activityDates.contains(_dayKey(today.subtract(Duration(days: i))))) break;
+      streak++;
+    }
+    streakDays = _activityDates.contains(todayKey) ? streak : 0;
+  }
+
+  String _dayKey(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
+  bool _isValidDayKey(String value) => RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
+
+  void _pruneActivityDates() {
+    final cutoff = DateTime.now().subtract(const Duration(days: 90));
+    _activityDates.removeWhere((value) {
+      final parts = value.split('-').map(int.parse).toList();
+      final date = DateTime(parts[0], parts[1], parts[2]);
+      return date.isBefore(DateTime(cutoff.year, cutoff.month, cutoff.day));
+    });
   }
 
   Future<void> _persistStats() async {
     final prefs = await SharedPreferences.getInstance();
+    _pruneActivityDates();
     await prefs.setInt('repsThisWeek', repsThisWeek);
     await prefs.setInt('minutesEarnedToday', minutesEarnedToday);
     await prefs.setInt('streakDays', streakDays);
+    await prefs.setString('statsDayKey', _dayKey(DateTime.now()));
+    await prefs.setStringList('activityDates', _activityDates.toList()..sort());
   }
 }
