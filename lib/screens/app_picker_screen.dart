@@ -12,14 +12,59 @@ class AppPickerScreen extends StatefulWidget {
   State<AppPickerScreen> createState() => _AppPickerScreenState();
 }
 
-class _AppPickerScreenState extends State<AppPickerScreen> {
+class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingObserver {
   String _query = '';
   String? _busyPackage;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _refreshApps(showErrors: false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _refreshApps(showErrors: false);
+    }
+  }
+
+  Future<void> _refreshApps({required bool showErrors}) async {
+    final appState = context.read<AppState>();
+    try {
+      await appState.checkUsageAccess();
+      await appState.loadAvailableApps(forceRefresh: true);
+    } catch (error) {
+      if (!showErrors || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تحميل التطبيقات: $error')),
+      );
+    }
+  }
+
+  Future<void> _openUsageAccessSettings() async {
+    await context.read<AppState>().requestUsageAccess();
+  }
 
   Future<void> _setLocked(AppState state, String packageName, bool locked) async {
     if (_busyPackage != null) return;
     setState(() => _busyPackage = packageName);
     try {
+      if (!state.hasUsageAccess) {
+        await _openUsageAccessSettings();
+        return;
+      }
       if (locked) {
         await state.addLockedApp(packageName);
       } else {
@@ -72,11 +117,39 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                       else
                         IconButton(
                           icon: const Icon(Icons.refresh, color: AppColors.textDim),
-                          onPressed: () => state.loadAvailableApps(forceRefresh: true),
+                          onPressed: () => _refreshApps(showErrors: true),
                         ),
                     ],
                   ),
                 ),
+                if (!state.hasUsageAccess)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Material(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: _openUsageAccessSettings,
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.security_outlined, color: AppColors.unlock),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'فعّل صلاحية الوصول إلى بيانات الاستخدام حتى يعمل قفل التطبيقات.',
+                                  style: AppTextStyles.body(size: 11.5, color: AppColors.textDim),
+                                ),
+                              ),
+                              const Icon(Icons.arrow_back_ios_new, size: 15, color: AppColors.textFaint),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: TextField(
@@ -109,9 +182,11 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                const Icon(Icons.apps_outlined, size: 42, color: AppColors.textFaint),
+                                const SizedBox(height: 12),
                                 Text(
                                   state.availableApps.isEmpty
-                                      ? 'ما لقيتش تطبيقات — جرب زر التحديث فالأعلى'
+                                      ? 'لم تظهر التطبيقات المثبتة بعد — اضغط تحديث بعد تفعيل الصلاحية'
                                       : 'ما لقيتش نتيجة',
                                   textAlign: TextAlign.center,
                                   style: AppTextStyles.body(size: 13, color: AppColors.textFaint),
@@ -171,7 +246,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                                         else
                                           Switch(
                                             value: isLocked,
-                                            activeColor: AppColors.signal,
+                                            activeThumbColor: AppColors.signal,
                                             onChanged: (v) => _setLocked(state, app.packageName, v),
                                           ),
                                       ],
