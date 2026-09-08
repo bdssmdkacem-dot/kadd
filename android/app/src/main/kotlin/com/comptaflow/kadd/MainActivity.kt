@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -38,11 +39,8 @@ class MainActivity : FlutterActivity() {
                 "syncLockedPackages" -> {
                     val packages = call.argument<List<String>>("packages") ?: emptyList()
                     LockPrefs.setLockedPackages(this, packages)
-                    if (packages.isEmpty()) {
-                        stopService(Intent(this, LockForegroundService::class.java))
-                    } else {
-                        LockForegroundService.ensureRunning(this)
-                    }
+                    if (packages.isEmpty()) stopService(Intent(this, LockForegroundService::class.java))
+                    else LockForegroundService.ensureRunning(this)
                     result.success(null)
                 }
                 "grantTemporaryUnlock" -> {
@@ -71,11 +69,10 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Returns the applications that the user can actually launch on this
-     * device. This is the source of truth for the Kadd picker because these
-     * are the packages that can subsequently appear in the foreground and be
-     * locked. QUERY_ALL_PACKAGES in the manifest removes Android 11+ package
-     * visibility filtering for this inventory.
+     * Source of truth for the picker: every installed package for which
+     * Android can resolve a launchable activity. We intentionally combine
+     * launcher-query and installed-package discovery because OEM Android
+     * builds differ in what they expose through CATEGORY_LAUNCHER.
      */
     private fun discoverApps(): List<Map<String, Any?>> {
         val byPackage = linkedMapOf<String, Map<String, Any?>>()
@@ -84,47 +81,34 @@ class MainActivity : FlutterActivity() {
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
-
-        val launcherActivities = packageManager.queryIntentActivities(
-            launcherIntent,
-            0,
-        )
-
+        val launcherFlags = if (Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
+        val launcherActivities = packageManager.queryIntentActivities(launcherIntent, launcherFlags)
         android.util.Log.d("Kadd", "Launcher activities returned: ${launcherActivities.size}")
 
         launcherActivities.forEach { resolveInfo ->
             val appInfo = resolveInfo.activityInfo?.applicationInfo ?: return@forEach
-            if (appInfo.packageName == ownPackage) return@forEach
-            addApp(byPackage, appInfo)
+            if (appInfo.packageName != ownPackage) addApp(byPackage, appInfo)
         }
 
-        // Some OEM launchers expose an installed app differently. Supplement
-        // the launcher inventory with PackageManager's installed application
-        // inventory instead of silently returning an empty picker.
-        if (byPackage.isEmpty()) {
-            val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
-                packageManager.getInstalledApplications(
-                    PackageManager.ApplicationInfoFlags.of(0L)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getInstalledApplications(0)
-            }
+        val installed = if (Build.VERSION.SDK_INT >= 33) {
+            packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(
+                PackageManager.MATCH_ALL.toLong()
+            ))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
+        }
+        android.util.Log.d("Kadd", "Installed applications returned: ${installed.size}")
 
-            android.util.Log.d("Kadd", "Installed applications returned: ${installed.size}")
-            installed.forEach { appInfo ->
-                if (appInfo.packageName == ownPackage) return@forEach
-                if ((appInfo.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@forEach
-                if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) {
-                    addApp(byPackage, appInfo)
-                }
-            }
+        installed.forEach { appInfo ->
+            if (appInfo.packageName == ownPackage) return@forEach
+            val launchIntent = packageManager.getLaunchIntentForPackage(appInfo.packageName)
+            if (launchIntent != null) addApp(byPackage, appInfo)
         }
 
         val apps = byPackage.values.sortedBy {
             (it["name"] as String).lowercase(Locale.getDefault())
         }
-
         android.util.Log.d("Kadd", "Kadd discovered ${apps.size} launchable installed apps")
         return apps
     }
@@ -143,12 +127,11 @@ class MainActivity : FlutterActivity() {
         }
         if (label.isEmpty()) return
 
-        val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
         destination[packageName] = mapOf(
             "name" to label,
             "packageName" to packageName,
             "icon" to drawableToPng(appInfo.loadIcon(packageManager)),
-            "isSystemApp" to isSystem,
+            "isSystemApp" to ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0),
         )
     }
 
