@@ -32,24 +32,21 @@ class MainActivity : FlutterActivity() {
                         result.success(discoverApps())
                     } catch (e: Exception) {
                         android.util.Log.e("Kadd", "App discovery failed", e)
-                        result.error("APP_LIST_ERROR", e.stackTraceToString(), null)
+                        result.error("APP_LIST_ERROR", e.message ?: "Unable to discover apps", null)
                     }
                 }
                 "syncLockedPackages" -> {
                     val packages = call.argument<List<String>>("packages") ?: emptyList()
                     LockPrefs.setLockedPackages(this, packages)
-                    if (packages.isEmpty()) {
-                        stopService(Intent(this, LockForegroundService::class.java))
-                    } else {
-                        LockForegroundService.ensureRunning(this)
-                    }
+                    if (packages.isEmpty()) stopService(Intent(this, LockForegroundService::class.java))
+                    else LockForegroundService.ensureRunning(this)
                     result.success(null)
                 }
                 "grantTemporaryUnlock" -> {
                     val packageName = call.argument<String>("packageName")
                     val minutes = call.argument<Int>("minutes")
-                    if (packageName.isNullOrBlank() || minutes == null) {
-                        result.error("INVALID_UNLOCK", "packageName and minutes are required", null)
+                    if (packageName.isNullOrBlank() || minutes == null || minutes <= 0) {
+                        result.error("INVALID_UNLOCK", "packageName and positive minutes are required", null)
                     } else {
                         LockPrefs.grantUnlockUntil(this, packageName, minutes)
                         result.success(null)
@@ -70,75 +67,49 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /** Build the picker from the complete installed-application inventory. */
+    /** Returns real, launchable applications installed on the device. */
     private fun discoverApps(): List<Map<String, Any?>> {
         val byPackage = linkedMapOf<String, Map<String, Any?>>()
         val ownPackage = applicationContext.packageName
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+        val launcherActivities = packageManager.queryIntentActivities(launcherIntent, 0)
+        android.util.Log.d("Kadd", "Launcher activities returned: ${launcherActivities.size}")
 
-        val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
-            packageManager.getInstalledApplications(
-                PackageManager.ApplicationInfoFlags.of(0L)
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.getInstalledApplications(0)
+        launcherActivities.forEach { resolveInfo ->
+            val appInfo = resolveInfo.activityInfo?.applicationInfo ?: return@forEach
+            if (appInfo.packageName != ownPackage) addApp(byPackage, appInfo)
         }
 
-        android.util.Log.d("Kadd", "PackageManager installed applications: ${installed.size}")
-
-        installed.forEach { appInfo ->
-            if (appInfo.packageName == ownPackage) return@forEach
-            if ((appInfo.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@forEach
-            addApp(byPackage, appInfo)
-        }
-
-        try {
-            val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
+        if (byPackage.isEmpty()) {
+            val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstalledApplications(0)
             }
-            packageManager.queryIntentActivities(
-                launcherIntent,
-                if (android.os.Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
-            ).forEach { info ->
-                val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
+            android.util.Log.d("Kadd", "Installed applications returned: ${installed.size}")
+            installed.forEach { appInfo ->
                 if (appInfo.packageName == ownPackage) return@forEach
-                addApp(byPackage, appInfo)
+                if ((appInfo.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@forEach
+                if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) addApp(byPackage, appInfo)
             }
-        } catch (e: Exception) {
-            android.util.Log.w("Kadd", "Launcher supplement failed", e)
         }
 
-        val all = byPackage.values.toList()
-        android.util.Log.d("Kadd", "Kadd discovered ${all.size} installed apps")
-
-        val userApps = all.filter { it["isSystemApp"] != true }
-        val chosen = if (userApps.isNotEmpty()) userApps else all
-
-        return chosen.sortedBy {
-            (it["name"] as String).lowercase(Locale.getDefault())
-        }
+        val apps = byPackage.values.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
+        android.util.Log.d("Kadd", "Kadd discovered ${apps.size} launchable installed apps")
+        return apps
     }
 
-    private fun addApp(
-        destination: MutableMap<String, Map<String, Any?>>,
-        appInfo: ApplicationInfo,
-    ) {
+    private fun addApp(destination: MutableMap<String, Map<String, Any?>>, appInfo: ApplicationInfo) {
         val packageName = appInfo.packageName
         if (destination.containsKey(packageName)) return
-
-        val label = try {
-            appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
-        } catch (_: Exception) {
-            ""
-        }
+        val label = try { appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty() } catch (_: Exception) { "" }
         if (label.isEmpty()) return
-
-        val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
         destination[packageName] = mapOf(
             "name" to label,
             "packageName" to packageName,
             "icon" to drawableToPng(appInfo.loadIcon(packageManager)),
-            "isSystemApp" to isSystem,
+            "isSystemApp" to ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0),
         )
     }
 
@@ -154,17 +125,11 @@ class MainActivity : FlutterActivity() {
                 bitmap.recycle()
                 output.toByteArray()
             }
-        } catch (_: Exception) {
-            null
-        }
+        } catch (_: Exception) { null }
     }
 
     private fun hasUsageAccess(): Boolean {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        return appOps.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-            packageName
-        ) == AppOpsManager.MODE_ALLOWED
+        return appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName) == AppOpsManager.MODE_ALLOWED
     }
 }
