@@ -32,18 +32,28 @@ class MainActivity : FlutterActivity() {
                         result.success(discoverApps())
                     } catch (e: Exception) {
                         android.util.Log.e("Kadd", "App discovery failed", e)
-                        result.error("APP_LIST_ERROR", e.stackTraceToString(), null)
+                        result.error("APP_LIST_ERROR", e.message ?: "Unable to discover apps", null)
                     }
                 }
                 "syncLockedPackages" -> {
                     val packages = call.argument<List<String>>("packages") ?: emptyList()
                     LockPrefs.setLockedPackages(this, packages)
-                    LockForegroundService.ensureRunning(this)
+                    if (packages.isEmpty()) {
+                        stopService(Intent(this, LockForegroundService::class.java))
+                    } else {
+                        LockForegroundService.ensureRunning(this)
+                    }
                     result.success(null)
                 }
                 "grantTemporaryUnlock" -> {
-                    LockPrefs.grantUnlockUntil(this, call.argument<String>("packageName")!!, call.argument<Int>("minutes")!!)
-                    result.success(null)
+                    val packageName = call.argument<String>("packageName")
+                    val minutes = call.argument<Int>("minutes")
+                    if (packageName.isNullOrBlank() || minutes == null || minutes <= 0) {
+                        result.error("INVALID_UNLOCK", "packageName and positive minutes are required", null)
+                    } else {
+                        LockPrefs.grantUnlockUntil(this, packageName, minutes)
+                        result.success(null)
+                    }
                 }
                 "grantAthanUnlock" -> {
                     LockPrefs.grantAthanUnlockForCurrentWindow(this)
@@ -61,60 +71,62 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Build the picker from the complete installed-application inventory.
-     * Kadd needs to let the user choose apps to lock, so a launcher-only
-     * query is intentionally NOT the source of truth.
+     * Returns the applications that the user can actually launch on this
+     * device. This is the source of truth for the Kadd picker because these
+     * are the packages that can subsequently appear in the foreground and be
+     * locked. QUERY_ALL_PACKAGES in the manifest removes Android 11+ package
+     * visibility filtering for this inventory.
      */
     private fun discoverApps(): List<Map<String, Any?>> {
         val byPackage = linkedMapOf<String, Map<String, Any?>>()
         val ownPackage = applicationContext.packageName
 
-        val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
-            packageManager.getInstalledApplications(
-                PackageManager.ApplicationInfoFlags.of(0L)
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.getInstalledApplications(0)
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
         }
 
-        android.util.Log.d("Kadd", "PackageManager installed applications: ${installed.size}")
+        val launcherActivities = packageManager.queryIntentActivities(
+            launcherIntent,
+            0,
+        )
 
-        installed.forEach { appInfo ->
+        android.util.Log.d("Kadd", "Launcher activities returned: ${launcherActivities.size}")
+
+        launcherActivities.forEach { resolveInfo ->
+            val appInfo = resolveInfo.activityInfo?.applicationInfo ?: return@forEach
             if (appInfo.packageName == ownPackage) return@forEach
-            if ((appInfo.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@forEach
             addApp(byPackage, appInfo)
         }
 
-        // Extra launcher discovery is only a supplement. It catches launcher
-        // activities exposed by vendor packages that may have unusual flags.
-        try {
-            val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
+        // Some OEM launchers expose an installed app differently. Supplement
+        // the launcher inventory with PackageManager's installed application
+        // inventory instead of silently returning an empty picker.
+        if (byPackage.isEmpty()) {
+            val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                packageManager.getInstalledApplications(
+                    PackageManager.ApplicationInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstalledApplications(0)
             }
-            packageManager.queryIntentActivities(
-                launcherIntent,
-                if (android.os.Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
-            ).forEach { info ->
-                val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
+
+            android.util.Log.d("Kadd", "Installed applications returned: ${installed.size}")
+            installed.forEach { appInfo ->
                 if (appInfo.packageName == ownPackage) return@forEach
-                addApp(byPackage, appInfo)
+                if ((appInfo.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@forEach
+                if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) {
+                    addApp(byPackage, appInfo)
+                }
             }
-        } catch (e: Exception) {
-            android.util.Log.w("Kadd", "Launcher supplement failed", e)
         }
 
-        val all = byPackage.values.toList()
-        android.util.Log.d("Kadd", "Kadd discovered ${all.size} installed apps")
-
-        // Prefer normal user-installed apps. If the ROM marks everything as a
-        // system app, fall back to the complete discovered list instead of 0.
-        val userApps = all.filter { it["isSystemApp"] != true }
-        val chosen = if (userApps.isNotEmpty()) userApps else all
-
-        return chosen.sortedBy {
+        val apps = byPackage.values.sortedBy {
             (it["name"] as String).lowercase(Locale.getDefault())
         }
+
+        android.util.Log.d("Kadd", "Kadd discovered ${apps.size} launchable installed apps")
+        return apps
     }
 
     private fun addApp(
