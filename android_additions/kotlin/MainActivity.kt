@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -67,44 +68,70 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /** Returns real, launchable applications installed on the device. */
+    /**
+     * Returns the real applications that the user can launch on this device.
+     * The launcher query is the primary source; PackageManager inventory is a
+     * fallback because some Android/OEM launchers expose packages differently.
+     */
     private fun discoverApps(): List<Map<String, Any?>> {
         val byPackage = linkedMapOf<String, Map<String, Any?>>()
         val ownPackage = applicationContext.packageName
-        val launcherIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
-        val launcherActivities = packageManager.queryIntentActivities(launcherIntent, 0)
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+
+        val launcherFlags = if (Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
+        val launcherActivities = packageManager.queryIntentActivities(launcherIntent, launcherFlags)
         android.util.Log.d("Kadd", "Launcher activities returned: ${launcherActivities.size}")
 
         launcherActivities.forEach { resolveInfo ->
             val appInfo = resolveInfo.activityInfo?.applicationInfo ?: return@forEach
-            if (appInfo.packageName != ownPackage) addApp(byPackage, appInfo)
-        }
-
-        if (byPackage.isEmpty()) {
-            val installed = if (android.os.Build.VERSION.SDK_INT >= 33) {
-                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getInstalledApplications(0)
-            }
-            android.util.Log.d("Kadd", "Installed applications returned: ${installed.size}")
-            installed.forEach { appInfo ->
-                if (appInfo.packageName == ownPackage) return@forEach
-                if ((appInfo.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@forEach
-                if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) addApp(byPackage, appInfo)
+            if (appInfo.packageName != ownPackage && isInstalled(appInfo)) {
+                addApp(byPackage, appInfo)
             }
         }
 
-        val apps = byPackage.values.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
+        // Do not depend exclusively on CATEGORY_LAUNCHER. Some OEMs and
+        // launchers do not expose every normal application through that query.
+        val installed = if (Build.VERSION.SDK_INT >= 33) {
+            packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstalledApplications(0)
+        }
+        android.util.Log.d("Kadd", "Installed applications returned: ${installed.size}")
+
+        installed.forEach { appInfo ->
+            if (appInfo.packageName == ownPackage || !isInstalled(appInfo)) return@forEach
+            if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) {
+                addApp(byPackage, appInfo)
+            }
+        }
+
+        val apps = byPackage.values
+            .sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
         android.util.Log.d("Kadd", "Kadd discovered ${apps.size} launchable installed apps")
         return apps
     }
 
-    private fun addApp(destination: MutableMap<String, Map<String, Any?>>, appInfo: ApplicationInfo) {
+    private fun isInstalled(appInfo: ApplicationInfo): Boolean {
+        return (appInfo.flags and ApplicationInfo.FLAG_INSTALLED) != 0
+    }
+
+    private fun addApp(
+        destination: MutableMap<String, Map<String, Any?>>,
+        appInfo: ApplicationInfo,
+    ) {
         val packageName = appInfo.packageName
         if (destination.containsKey(packageName)) return
-        val label = try { appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty() } catch (_: Exception) { "" }
+
+        val label = try {
+            appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
         if (label.isEmpty()) return
+
         destination[packageName] = mapOf(
             "name" to label,
             "packageName" to packageName,
@@ -125,11 +152,17 @@ class MainActivity : FlutterActivity() {
                 bitmap.recycle()
                 output.toByteArray()
             }
-        } catch (_: Exception) { null }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun hasUsageAccess(): Boolean {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        return appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName) == AppOpsManager.MODE_ALLOWED
+        return appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            packageName
+        ) == AppOpsManager.MODE_ALLOWED
     }
 }
