@@ -49,7 +49,14 @@ class MainActivity : FlutterActivity() {
                 "scheduleAthanLocks" -> {
                     @Suppress("UNCHECKED_CAST")
                     val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
-                    AthanAlarmScheduler.schedule(this, prayers, call.argument<Int>("delayMinutes") ?: 5)
+                    val enabled = call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String }
+                    AthanAlarmScheduler.schedule(
+                        this,
+                        prayers,
+                        call.argument<Int>("delayMinutes") ?: 5,
+                        call.argument<String>("cityName"),
+                        enabled,
+                    )
                     result.success(null)
                 }
                 else -> result.notImplemented()
