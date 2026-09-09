@@ -27,7 +27,7 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 - [x] Persist daily earnings with a calendar-day boundary.
 - [x] Persist activity dates and calculate a real current streak.
 - [x] Make weekly repetition totals reset at the calendar-week boundary.
-- [ ] Add automated unit/widget coverage for models and state transitions.
+- [x] Add automated unit/widget coverage for the core model and exercise state machine.
 - [ ] Verify every native lock transition on a physical Android device.
 - [ ] Verify prayer alarm scheduling across reboot and device idle modes.
 - [ ] Verify camera orientation/pose thresholds on multiple Android devices.
@@ -41,7 +41,7 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 - [x] Per-app exercise target and unlock-duration configuration.
 - [x] Defensive persistence and validation of per-app configuration.
 - [x] Independent initialization of app discovery and prayer refresh so network failure does not block the app.
-- [ ] Reliable exercise session state: current reps, target, pause/retry, lost-tracking recovery, completion.
+- [x] Reliable exercise session state: current reps, target, lost-tracking recovery, camera failure/retry, completion, and duplicate-completion protection.
 - [ ] Prayer setup: city, enabled prayers, delay, next prayer status, and clear active-lock state.
 - [ ] Prayer verification flow with camera guidance and failure/retry handling.
 - [ ] Statistics: daily, weekly, streak, total repetitions, earned minutes, and per-app history.
@@ -56,7 +56,7 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 - [ ] Prevent stale unlock windows and stale prayer locks.
 - [x] Validate persisted MethodChannel/app configuration data defensively.
 - [ ] Avoid logging package lists or other unnecessary user/device data.
-- [ ] Add regression tests for every discovered production bug.
+- [x] Add regression tests for the discovered navigation and exercise-state bugs.
 
 ## Phase 4 — Production release
 
