@@ -32,8 +32,8 @@ class LockedApp {
 
   LockedApp({
     required this.packageName,
-    this.baseReps = 20,
-    this.minutesGranted = 15,
+    int baseReps = 20,
+    int minutesGranted = 15,
     this.isEnabled = true,
   })  : baseReps = baseReps.clamp(1, 500),
         minutesGranted = minutesGranted.clamp(1, 180);
