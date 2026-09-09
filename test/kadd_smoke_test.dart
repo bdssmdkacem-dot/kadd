@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:intl/date_symbol_data_local.dart';
+import 'package:intl/date_symbol_data_local/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 
 import 'package:kadd/main.dart';
 import 'package:kadd/state/app_state.dart';
+import 'package:kadd/screens/home_screen.dart';
 
 void main() {
   setUpAll(() async {
