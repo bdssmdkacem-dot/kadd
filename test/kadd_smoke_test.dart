@@ -19,29 +19,25 @@ void main() {
       ChangeNotifierProvider<AppState>.value(
         value: state,
         child: const MaterialApp(
-          // Keep framework MaterialLocalizations on a built-in locale. The
-          // production RootNav still renders its real Arabic labels and
-          // Directionality; this is test-only host configuration.
           locale: Locale('en'),
           supportedLocales: [Locale('en')],
           home: RootNav(),
         ),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    final home = find.widgetWithText(NavigationDestination, 'الرئيسية');
-    final prayer = find.widgetWithText(NavigationDestination, 'الصلاة');
+    expect(find.byType(NavigationBar), findsOneWidget);
+    final navigationBar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(navigationBar.destinations.length, 4);
+    expect(find.text('الرئيسية'), findsOneWidget);
+    expect(find.text('التطبيقات'), findsOneWidget);
+    expect(find.text('الصلاة'), findsOneWidget);
+    expect(find.text('الإحصائيات'), findsOneWidget);
+    expect(navigationBar.selectedIndex, 0);
 
-    expect(home, findsOneWidget);
-    expect(prayer, findsOneWidget);
-    expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      0,
-    );
-
-    await tester.tap(prayer);
-    await tester.pump();
+    await tester.tap(find.byIcon(Icons.mosque_outlined));
+    await tester.pumpAndSettle();
 
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
@@ -49,12 +45,13 @@ void main() {
     );
     expect(find.text('أي صلاة تريد الالتزام بها؟'), findsOneWidget);
 
-    await tester.tap(home);
-    await tester.pump();
+    await tester.tap(find.byIcon(Icons.lock_outline));
+    await tester.pumpAndSettle();
 
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
       0,
     );
+    expect(find.byType(HomeScreen), findsOneWidget);
   });
 }
