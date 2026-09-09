@@ -6,7 +6,6 @@ import '../theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/kadd_background.dart';
 import '../widgets/kadd_card.dart';
-import '../widgets/kadd_primary_button.dart';
 import 'rug_scan_screen.dart';
 
 /// Shown (via a full-screen native Activity, see android_additions/) when a
@@ -70,19 +69,11 @@ class PrayerLockScreen extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              const Text('🔒'),
+                              const Icon(Icons.lock_outline, color: AppColors.signal, size: 18),
                             ],
                           ),
                         ),
                       )),
-                  KaddCard(
-                    padding: const EdgeInsets.all(10),
-                    child: Text(
-                      'سيُفتح كل شيء تلقائيًا بمجرد التعرف على السجادة، بلا ضغطات هذه المرة',
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.body(size: 11, color: AppColors.textFaint),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -93,8 +84,6 @@ class PrayerLockScreen extends StatelessWidget {
   }
 }
 
-/// A slow, subtle breathing pulse on the lock icon — signals "waiting on
-/// you" without being distracting.
 class _PulsingLockBadge extends StatefulWidget {
   const _PulsingLockBadge();
 
@@ -102,16 +91,12 @@ class _PulsingLockBadge extends StatefulWidget {
   State<_PulsingLockBadge> createState() => _PulsingLockBadgeState();
 }
 
-class _PulsingLockBadgeState extends State<_PulsingLockBadge> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat(reverse: true);
-    _scale = Tween<double>(begin: 1.0, end: 1.06).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-  }
+class _PulsingLockBadgeState extends State<_PulsingLockBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
 
   @override
   void dispose() {
@@ -121,17 +106,18 @@ class _PulsingLockBadgeState extends State<_PulsingLockBadge> with SingleTickerP
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scale,
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.65, end: 1).animate(_controller),
       child: Container(
-        width: 120,
-        height: 120,
+        width: 74,
+        height: 74,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(color: AppColors.signal, width: 2),
+          color: AppColors.signal.withOpacity(0.08),
         ),
-        child: const Text('🔒', style: TextStyle(fontSize: 40)),
+        child: const Icon(Icons.lock, color: AppColors.signal, size: 30),
       ),
     );
   }
