@@ -37,8 +37,6 @@ object LockPrefs {
         val until = prefs(context).getLong(key, 0L)
         val active = System.currentTimeMillis() < until
         if (!active && until != 0L) {
-            // Remove expired state so a reboot/process restart cannot retain
-            // stale unlock metadata indefinitely.
             prefs(context).edit().remove(key).apply()
         }
         return active
@@ -58,7 +56,10 @@ object LockPrefs {
         prefs(context).getString(KEY_ACTIVE_PRAYER_NAME, null)
 
     fun grantAthanUnlockForCurrentWindow(context: Context) {
-        prefs(context).edit().putBoolean(KEY_ATHAN_LOCK_ACTIVE, false).apply()
+        prefs(context).edit()
+            .putBoolean(KEY_ATHAN_LOCK_ACTIVE, false)
+            .remove(KEY_ACTIVE_PRAYER_NAME)
+            .apply()
     }
 
     private fun prefs(context: Context) =
