@@ -16,20 +16,22 @@ class AppUsageService {
 
   Future<List<Map<String, dynamic>>> getLaunchableApps() async {
     final raw = await _channel.invokeMethod<List<dynamic>>('getLaunchableApps');
-    if (raw == null) return <Map<String, dynamic>>[];
-    return raw
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList(growable: false);
+    if (raw == null) {
+      throw StateError('Android returned null for getLaunchableApps');
+    }
+    return raw.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList(growable: false);
   }
 
-  /// Pushes the current list of package names that should be locked when
-  /// foregrounded (and not currently within an active unlock window).
+  Future<Map<String, dynamic>> getAppDiscoveryDiagnostics() async {
+    final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>('getAppDiscoveryDiagnostics');
+    if (raw == null) throw StateError('Android returned no app discovery diagnostics');
+    return Map<String, dynamic>.from(raw);
+  }
+
   Future<void> syncLockedPackages(List<String> packages) async {
     await _channel.invokeMethod('syncLockedPackages', {'packages': packages});
   }
 
-  /// Grants `minutes` of unlocked access to a single package, starting now.
   Future<void> grantTemporaryUnlock(String packageName, int minutes) async {
     await _channel.invokeMethod('grantTemporaryUnlock', {
       'packageName': packageName,
