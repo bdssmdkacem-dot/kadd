@@ -1,5 +1,6 @@
 package com.comptaflow.kadd
 
+import android.app.AppOpsManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -13,14 +14,16 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.Process
 import androidx.core.app.NotificationCompat
 
 /**
- * Owns the Android-side enforcement loop for Kadd app locks.
+ * Owns Android-side enforcement for Kadd's configured app locks.
  *
- * UsageEvents is preferred because it represents foreground transitions. The
- * UsageStats query is only a fallback for devices/OEMs where events are sparse.
- * No AccessibilityService is used.
+ * The service is deliberately idempotent: every poll reads the persisted
+ * source of truth, ignores Kadd itself, ignores active unlock windows, and
+ * launches at most the single LockActivity task needed for the current
+ * foreground package. No AccessibilityService is used.
  */
 class LockForegroundService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -48,14 +51,31 @@ class LockForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun checkForegroundApp() {
-        val locked = LockPrefs.getLockedPackages(this)
-        if (locked.isEmpty()) {
+        if (!hasUsageAccess()) {
+            stopSelf()
+            return
+        }
+
+        val persisted = LockPrefs.getLockedPackages(this)
+        if (persisted.isEmpty()) {
+            stopSelf()
+            return
+        }
+
+        // Package removal can happen while Kadd is not running. Prune only
+        // packages that Android definitively no longer knows about; a temporary
+        // discovery failure must never erase a user's configuration.
+        val installed = persisted.filterTo(mutableSetOf()) { isInstalled(it) }
+        if (installed.size != persisted.size) {
+            LockPrefs.setLockedPackages(this, installed.toList())
+        }
+        if (installed.isEmpty()) {
             stopSelf()
             return
         }
 
         val foreground = findForegroundPackage() ?: return
-        if (foreground == packageName || foreground !in locked) return
+        if (foreground == packageName || foreground !in installed) return
         if (LockPrefs.isCurrentlyUnlocked(this, foreground)) return
 
         val lockIntent = Intent(this, LockActivity::class.java).apply {
@@ -69,9 +89,31 @@ class LockForegroundService : Service() {
         try {
             startActivity(lockIntent)
         } catch (_: Exception) {
-            // The next poll retries if Android/OEM task policy temporarily
-            // rejects the launch while the foreground task is changing.
+            // OEM task restrictions are transient; the next poll retries.
         }
+    }
+
+    private fun isInstalled(packageName: String): Boolean = try {
+        if (Build.VERSION.SDK_INT >= 33) {
+            packageManager.getApplicationInfo(
+                packageName,
+                android.content.pm.PackageManager.ApplicationInfoFlags.of(0),
+            )
+        } else {
+            @Suppress("DEPRECATION") packageManager.getApplicationInfo(packageName, 0)
+        }
+        true
+    } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+        false
+    }
+
+    private fun hasUsageAccess(): Boolean {
+        val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        return appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            packageName,
+        ) == AppOpsManager.MODE_ALLOWED
     }
 
     private fun findForegroundPackage(): String? {
@@ -79,8 +121,6 @@ class LockForegroundService : Service() {
         val end = System.currentTimeMillis()
         val start = end - LOOKBACK_MS
 
-        // Prefer actual foreground transitions. ACTIVITY_RESUMED is the modern
-        // signal; MOVE_TO_FOREGROUND covers older Android releases.
         val events = usm.queryEvents(start, end)
         val event = UsageEvents.Event()
         var foreground: String? = null
@@ -95,14 +135,12 @@ class LockForegroundService : Service() {
         }
         if (foreground != null) return foreground
 
-        // Fallback for OEMs that expose stats but not recent events.
         val stats: List<UsageStats> = usm.queryUsageStats(
             UsageStatsManager.INTERVAL_BEST,
             start,
-            end
+            end,
         ) ?: emptyList()
-        return stats
-            .asSequence()
+        return stats.asSequence()
             .filter { it.packageName.isNotBlank() }
             .maxByOrNull { it.lastTimeUsed }
             ?.packageName
@@ -114,7 +152,7 @@ class LockForegroundService : Service() {
             val channel = NotificationChannel(
                 channelId,
                 "حماية كدّ نشطة",
-                NotificationManager.IMPORTANCE_MIN
+                NotificationManager.IMPORTANCE_MIN,
             )
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(channel)
@@ -123,7 +161,7 @@ class LockForegroundService : Service() {
             this,
             0,
             Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("كدّ يراقب تطبيقاتك المقفلة")
