@@ -6,6 +6,7 @@ import '../models/prayer.dart';
 import '../services/rug_classifier.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../widgets/kadd_primary_button.dart';
 
 class RugScanScreen extends StatefulWidget {
   final PrayerName prayer;
@@ -121,13 +122,16 @@ class _RugScanScreenState extends State<RugScanScreen> {
             else
               Center(
                 child: _error != null
-                    ? Column(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.camera_alt_outlined, size: 48, color: AppColors.signal),
-                        const SizedBox(height: 12),
-                        Text(_error!, textAlign: TextAlign.center, style: AppTextStyles.body(size: 13)),
-                        const SizedBox(height: 16),
-                        KaddPrimaryButton(label: 'إعادة المحاولة', onPressed: _initialize),
-                      ])
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.camera_alt_outlined, size: 48, color: AppColors.signal),
+                          const SizedBox(height: 12),
+                          Text(_error!, textAlign: TextAlign.center, style: AppTextStyles.body(size: 13)),
+                          const SizedBox(height: 16),
+                          KaddPrimaryButton(label: 'إعادة المحاولة', onPressed: _initialize),
+                        ],
+                      )
                     : const CircularProgressIndicator(color: AppColors.unlock),
               ),
             SafeArea(
