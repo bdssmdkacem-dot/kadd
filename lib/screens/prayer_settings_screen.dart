@@ -8,7 +8,6 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/kadd_background.dart';
 import '../widgets/kadd_card.dart';
-import '../widgets/kadd_primary_button.dart';
 
 class PrayerSettingsScreen extends StatefulWidget {
   const PrayerSettingsScreen({super.key});
