@@ -6,6 +6,7 @@ import '../theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/kadd_background.dart';
 import '../widgets/kadd_card.dart';
+import '../widgets/kadd_primary_button.dart';
 import 'rug_scan_screen.dart';
 
 /// Shown (via a full-screen native Activity, see android_additions/) when a
@@ -93,8 +94,7 @@ class PrayerLockScreen extends StatelessWidget {
 }
 
 /// A slow, subtle breathing pulse on the lock icon — signals "waiting on
-/// you" without being distracting. This kind of small continuous motion is
-/// what separated Aqim's hand-finished feel from a static mockup screenshot.
+/// you" without being distracting.
 class _PulsingLockBadge extends StatefulWidget {
   const _PulsingLockBadge();
 
