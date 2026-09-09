@@ -48,8 +48,6 @@ class AppState extends ChangeNotifier {
       debugPrint('Kadd: loading saved state failed: $e\n$st');
     }
 
-    // Mark the local state ready before network work so native lock activities
-    // can render from persisted data without waiting for prayer API calls.
     isInitialized = true;
     notifyListeners();
 
@@ -65,8 +63,6 @@ class AppState extends ChangeNotifier {
       debugPrint('Kadd: initial lock sync failed: $e\n$st');
     }
 
-    // Prayer refresh and app discovery are deliberately independent so a
-    // network/OEM failure cannot prevent the rest of Kadd from becoming usable.
     unawaited(refreshPrayerTimes());
     unawaited(loadAvailableApps());
   }
@@ -98,11 +94,9 @@ class AppState extends ChangeNotifier {
           await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
         }
       }
-
       _appInfoCache
         ..clear()
         ..addEntries(availableApps.map((info) => MapEntry(info.packageName, info)));
-
       if (availableApps.isEmpty && lastError != null) {
         debugPrint('Kadd: app discovery failed after retries: $lastError');
       }
@@ -114,7 +108,6 @@ class AppState extends ChangeNotifier {
   }
 
   String displayNameFor(String packageName) => _appInfoCache[packageName]?.name ?? packageName;
-
   Uint8List? iconFor(String packageName) => _appInfoCache[packageName]?.icon;
 
   Future<void> _syncLockedPackages() async {
@@ -137,7 +130,6 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       apps.removeWhere((a) => a.packageName == normalized);
       notifyListeners();
-      debugPrint('Kadd: failed to sync newly locked app $normalized: $e');
       rethrow;
     }
   }
@@ -152,7 +144,20 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       apps = previous;
       notifyListeners();
-      debugPrint('Kadd: failed to sync removed app $packageName: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateLockedAppConfig(LockedApp app, {required int reps, required int minutes}) async {
+    final previousReps = app.baseReps;
+    final previousMinutes = app.minutesGranted;
+    app.configure(reps: reps, minutes: minutes);
+    notifyListeners();
+    try {
+      await _persistApps();
+    } catch (e) {
+      app.configure(reps: previousReps, minutes: previousMinutes);
+      notifyListeners();
       rethrow;
     }
   }
@@ -163,7 +168,11 @@ class AppState extends ChangeNotifier {
     difficulty = Difficulty.values[difficultyIndex.clamp(0, Difficulty.values.length - 1)];
     delayMinutesAfterAthan = (prefs.getInt('delayMinutes') ?? 5).clamp(0, 60);
     repsThisWeek = prefs.getInt('repsThisWeek') ?? 0;
-    onboardingComplete = prefs.getBool('onboardingComplete') ?? false;
+
+    final weekKey = _weekKey(DateTime.now());
+    if (prefs.getString('repsWeekKey') != weekKey) {
+      repsThisWeek = 0;
+    }
 
     final todayKey = _dayKey(DateTime.now());
     minutesEarnedToday = prefs.getString('statsDayKey') == todayKey
@@ -213,10 +222,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _persistEnabledPrayers() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      'enabledPrayerNames',
-      prayers.where((p) => p.enabled).map((p) => p.name.name).toList(),
-    );
+    await prefs.setStringList('enabledPrayerNames', prayers.where((p) => p.enabled).map((p) => p.name.name).toList());
   }
 
   Future<void> completeOnboarding() async {
@@ -255,10 +261,7 @@ class AppState extends ChangeNotifier {
       for (final p in prayers) {
         p.timeToday = result.timings[p.name.aladhanKey];
       }
-      await _usageService.scheduleAthanLocks(
-        prayers.where((p) => p.enabled && p.timeToday != null).toList(),
-        delayMinutesAfterAthan,
-      );
+      await _usageService.scheduleAthanLocks(prayers.where((p) => p.enabled && p.timeToday != null).toList(), delayMinutesAfterAthan);
       notifyListeners();
     } catch (e) {
       debugPrint('Prayer time fetch failed: $e');
@@ -281,7 +284,6 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       app.isEnabled = previous;
       notifyListeners();
-      debugPrint('Kadd: failed to sync app toggle ${app.packageName}: $e');
       rethrow;
     }
   }
@@ -325,13 +327,8 @@ class AppState extends ChangeNotifier {
   void _rebuildStreak() {
     final today = DateTime.now();
     final todayKey = _dayKey(today);
-    final days = List<bool>.generate(
-      7,
-      (index) => _activityDates.contains(_dayKey(today.subtract(Duration(days: index)))),
-    );
-    last7Days
-      ..clear()
-      ..addAll(days.reversed);
+    final days = List<bool>.generate(7, (index) => _activityDates.contains(_dayKey(today.subtract(Duration(days: index)))));
+    last7Days..clear()..addAll(days.reversed);
 
     var streak = 0;
     for (var i = 0; i < 91; i++) {
@@ -341,10 +338,12 @@ class AppState extends ChangeNotifier {
     streakDays = _activityDates.contains(todayKey) ? streak : 0;
   }
 
-  String _dayKey(DateTime date) =>
-      '${date.year.toString().padLeft(4, '0')}-'
-      '${date.month.toString().padLeft(2, '0')}-'
-      '${date.day.toString().padLeft(2, '0')}';
+  String _dayKey(DateTime date) => '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  String _weekKey(DateTime date) {
+    final monday = date.subtract(Duration(days: date.weekday - DateTime.monday));
+    return _dayKey(monday);
+  }
 
   bool _isValidDayKey(String value) => RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
 
@@ -361,6 +360,7 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _pruneActivityDates();
     await prefs.setInt('repsThisWeek', repsThisWeek);
+    await prefs.setString('repsWeekKey', _weekKey(DateTime.now()));
     await prefs.setInt('minutesEarnedToday', minutesEarnedToday);
     await prefs.setInt('streakDays', streakDays);
     await prefs.setString('statsDayKey', _dayKey(DateTime.now()));
