@@ -1,7 +1,6 @@
 enum Difficulty { easy, medium, hard }
 
 extension DifficultyMultiplier on Difficulty {
-  /// Multiplies each app's base rep cost.
   double get multiplier {
     switch (this) {
       case Difficulty.easy:
@@ -25,15 +24,10 @@ extension DifficultyMultiplier on Difficulty {
   }
 }
 
-/// A user-chosen app to lock, picked from their actual installed apps (see
-/// InstalledAppsService) rather than a fixed catalogue. Display info (name,
-/// icon) is deliberately NOT stored here — it's resolved live from the
-/// device each time, via AppState's app-info cache, so it always reflects
-/// reality even if the app is updated, renamed, or uninstalled later.
 class LockedApp {
   final String packageName;
-  final int baseReps;
-  final int minutesGranted;
+  int baseReps;
+  int minutesGranted;
   bool isEnabled;
 
   LockedApp({
@@ -41,15 +35,21 @@ class LockedApp {
     this.baseReps = 20,
     this.minutesGranted = 15,
     this.isEnabled = true,
-  });
+  })  : baseReps = baseReps.clamp(1, 500),
+        minutesGranted = minutesGranted.clamp(1, 180);
 
-  int repsFor(Difficulty d) => (baseReps * d.multiplier).round();
+  int repsFor(Difficulty d) => (baseReps * d.multiplier).round().clamp(1, 500);
+
+  void configure({int? reps, int? minutes}) {
+    if (reps != null) baseReps = reps.clamp(1, 500);
+    if (minutes != null) minutesGranted = minutes.clamp(1, 180);
+  }
 
   factory LockedApp.fromJson(Map<String, dynamic> j) => LockedApp(
-        packageName: j['packageName'],
-        baseReps: j['baseReps'] ?? 20,
-        minutesGranted: j['minutesGranted'] ?? 15,
-        isEnabled: j['isEnabled'] ?? true,
+        packageName: (j['packageName'] ?? '').toString(),
+        baseReps: _asInt(j['baseReps'], 20),
+        minutesGranted: _asInt(j['minutesGranted'], 15),
+        isEnabled: j['isEnabled'] != false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -58,4 +58,9 @@ class LockedApp {
         'minutesGranted': minutesGranted,
         'isEnabled': isEnabled,
       };
+
+  static int _asInt(dynamic value, int fallback) {
+    if (value is num) return value.round();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
 }
