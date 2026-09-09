@@ -3,8 +3,6 @@ import 'dart:typed_data';
 import '../models/installed_app.dart';
 import 'app_usage_service.dart';
 
-/// Discovers user-facing Android apps through Kadd's native PackageManager
-/// bridge so package visibility and the lock service use the same inventory.
 class InstalledAppsService {
   InstalledAppsService({AppUsageService? usageService})
       : _usageService = usageService ?? AppUsageService();
@@ -12,11 +10,15 @@ class InstalledAppsService {
   final AppUsageService _usageService;
   List<InstalledApp>? _cache;
   Object? lastError;
+  Map<String, dynamic> lastDiagnostics = const {};
 
   Future<List<InstalledApp>> getLaunchableApps({bool forceRefresh = false}) async {
     if (_cache != null && !forceRefresh) return _cache!;
 
+    lastError = null;
     try {
+      final diagnostics = await _usageService.getAppDiscoveryDiagnostics();
+      lastDiagnostics = diagnostics;
       final rawApps = await _usageService.getLaunchableApps();
       final apps = rawApps
           .map(_toInstalledApp)
@@ -26,15 +28,22 @@ class InstalledAppsService {
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
       _cache = apps;
-      lastError = apps.isEmpty
-          ? StateError('Android returned no installed launchable applications')
-          : null;
+      if (apps.isEmpty) {
+        lastError = StateError('لم يعثر Android على تطبيقات قابلة للتشغيل. ${diagnosticSummary()}');
+      }
       return apps;
     } catch (e) {
       lastError = e;
       _cache = <InstalledApp>[];
       return _cache!;
     }
+  }
+
+  String diagnosticSummary() {
+    if (lastDiagnostics.isEmpty) return 'لا تتوفر بيانات تشخيص Android.';
+    return 'launcher=${lastDiagnostics['launcherCount'] ?? 0}, '
+        'installed=${lastDiagnostics['installedCount'] ?? 0}, '
+        'launchable=${lastDiagnostics['launchableCount'] ?? 0}';
   }
 
   InstalledApp? _toInstalledApp(Map<String, dynamic> raw) {
