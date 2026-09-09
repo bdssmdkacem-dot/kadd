@@ -79,10 +79,12 @@ object AthanAlarmScheduler {
         if (!canScheduleExact(alarmManager)) return
         val city = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_CITY, "").orEmpty()
         if (city.isBlank()) return
-        val calendar = Calendar.getInstance().apply {
-            timeInMillis = System.currentTimeMillis()
+        val calendar = Calendar.getInstance(TimeZone.getTimeZone(TIME_ZONE)).apply {
             add(Calendar.DAY_OF_YEAR, 1)
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 5); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 5)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }
         val pendingIntent = PendingIntent.getBroadcast(context, REFRESH_REQUEST_CODE, Intent(context, PrayerScheduleRefreshReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
@@ -114,7 +116,9 @@ object AthanAlarmScheduler {
         val date = SimpleDateFormat("dd-MM-yyyy", Locale.US).apply { timeZone = tz }.format(tomorrow.time)
         val encodedCity = URLEncoder.encode(city, "UTF-8")
         val connection = (URL("https://api.aladhan.com/v1/timingsByCity?date=$date&city=$encodedCity&country=$COUNTRY&method=$METHOD").openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 8000; readTimeout = 8000
+            requestMethod = "GET"
+            connectTimeout = 8000
+            readTimeout = 8000
         }
         try {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) return
@@ -123,19 +127,29 @@ object AthanAlarmScheduler {
             val next = mutableListOf<Map<String, Any>>()
             enabled.forEach { name ->
                 val key = when (name) {
-                    "fajr" -> "Fajr"; "dhuhr" -> "Dhuhr"; "asr" -> "Asr"; "maghrib" -> "Maghrib"; "isha" -> "Isha"; else -> null
+                    "fajr" -> "Fajr"
+                    "dhuhr" -> "Dhuhr"
+                    "asr" -> "Asr"
+                    "maghrib" -> "Maghrib"
+                    "isha" -> "Isha"
+                    else -> null
                 } ?: return@forEach
                 val hm = timings.optString(key, "").substringBefore(" ").split(":")
                 if (hm.size != 2) return@forEach
                 val hour = hm[0].toIntOrNull() ?: return@forEach
                 val minute = hm[1].toIntOrNull() ?: return@forEach
                 val prayerCalendar = tomorrow.clone() as Calendar
-                prayerCalendar.set(Calendar.HOUR_OF_DAY, hour); prayerCalendar.set(Calendar.MINUTE, minute); prayerCalendar.set(Calendar.SECOND, 0); prayerCalendar.set(Calendar.MILLISECOND, 0)
+                prayerCalendar.set(Calendar.HOUR_OF_DAY, hour)
+                prayerCalendar.set(Calendar.MINUTE, minute)
+                prayerCalendar.set(Calendar.SECOND, 0)
+                prayerCalendar.set(Calendar.MILLISECOND, 0)
                 next += mapOf("name" to name, "epochMillis" to prayerCalendar.timeInMillis)
             }
             schedule(context, next, delay, city, enabled.toList())
         } finally {
             connection.disconnect()
+            // Keep the daily refresh alive even when the network/API is temporarily unavailable.
+            scheduleRefresh(context, context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
         }
     }
 
