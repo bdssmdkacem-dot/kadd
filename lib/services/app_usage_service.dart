@@ -10,15 +10,23 @@ class AppUsageService {
     return await _channel.invokeMethod<bool>('hasUsageAccess') ?? false;
   }
 
-  Future<void> requestUsageAccess() async {
-    await _channel.invokeMethod('requestUsageAccess');
+  Future<void> requestUsageAccess() => _channel.invokeMethod('requestUsageAccess');
+
+  Future<bool> canScheduleExactAlarms() async {
+    return await _channel.invokeMethod<bool>('canScheduleExactAlarms') ?? false;
   }
+
+  Future<void> requestExactAlarmAccess() => _channel.invokeMethod('requestExactAlarmAccess');
+
+  Future<bool> isAthanLockActive() async {
+    return await _channel.invokeMethod<bool>('isAthanLockActive') ?? false;
+  }
+
+  Future<String?> activePrayerName() => _channel.invokeMethod<String>('activePrayerName');
 
   Future<List<Map<String, dynamic>>> getLaunchableApps() async {
     final raw = await _channel.invokeMethod<List<dynamic>>('getLaunchableApps');
-    if (raw == null) {
-      throw StateError('Android returned null for getLaunchableApps');
-    }
+    if (raw == null) throw StateError('Android returned null for getLaunchableApps');
     return raw.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList(growable: false);
   }
 
@@ -39,9 +47,7 @@ class AppUsageService {
     });
   }
 
-  Future<void> grantAthanUnlock() async {
-    await _channel.invokeMethod('grantAthanUnlock');
-  }
+  Future<void> grantAthanUnlock() => _channel.invokeMethod('grantAthanUnlock');
 
   Future<void> scheduleAthanLocks(
     List<PrayerSetting> enabledPrayers,
