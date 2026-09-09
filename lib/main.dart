@@ -13,12 +13,12 @@ import 'screens/prayer_settings_screen.dart';
 import 'screens/stats_screen.dart';
 import 'screens/rep_camera_screen.dart';
 import 'screens/prayer_lock_screen.dart';
+import 'screens/onboarding_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   final AppState state = AppState();
 
-  // Do not block the first Flutter frame on network/native initialization.
   runApp(
     ChangeNotifierProvider<AppState>.value(
       value: state,
@@ -68,17 +68,7 @@ class KaddApp extends StatelessWidget {
       final String? packageName = uri.queryParameters['package'];
       return MaterialPageRoute<void>(
         settings: settings,
-        builder: (context) {
-          final AppState state = context.read<AppState>();
-          if (state.apps.isEmpty) return const RootNav();
-          final app = packageName == null
-              ? state.apps.first
-              : state.apps.firstWhere(
-                  (item) => item.packageName == packageName,
-                  orElse: () => state.apps.first,
-                );
-          return RepCameraScreen(app: app);
-        },
+        builder: (_) => _LockRepEntry(packageName: packageName),
       );
     }
 
@@ -89,13 +79,81 @@ class KaddApp extends StatelessWidget {
       );
       return MaterialPageRoute<void>(
         settings: settings,
-        builder: (_) => PrayerLockScreen(prayer: prayer),
+        builder: (_) => _LockPrayerEntry(prayer: prayer),
       );
     }
 
     return MaterialPageRoute<void>(
       settings: settings,
-      builder: (_) => const RootNav(),
+      builder: (_) => const _StartupEntry(),
+    );
+  }
+}
+
+class _StartupEntry extends StatelessWidget {
+  const _StartupEntry();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppState>(
+      builder: (context, state, _) {
+        if (!state.isInitialized) {
+          return const Scaffold(
+            backgroundColor: AppColors.ink,
+            body: Center(child: CircularProgressIndicator(color: AppColors.unlock)),
+          );
+        }
+        return state.onboardingComplete ? const RootNav() : const OnboardingScreen();
+      },
+    );
+  }
+}
+
+class _LockRepEntry extends StatelessWidget {
+  final String? packageName;
+  const _LockRepEntry({this.packageName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppState>(
+      builder: (context, state, _) {
+        if (!state.isInitialized) {
+          return const Scaffold(
+            backgroundColor: AppColors.ink,
+            body: Center(child: CircularProgressIndicator(color: AppColors.unlock)),
+          );
+        }
+        if (state.apps.isEmpty) {
+          return const RootNav();
+        }
+        final app = packageName == null
+            ? state.apps.first
+            : state.apps.firstWhere(
+                (item) => item.packageName == packageName,
+                orElse: () => state.apps.first,
+              );
+        return RepCameraScreen(app: app);
+      },
+    );
+  }
+}
+
+class _LockPrayerEntry extends StatelessWidget {
+  final PrayerName prayer;
+  const _LockPrayerEntry({required this.prayer});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppState>(
+      builder: (context, state, _) {
+        if (!state.isInitialized) {
+          return const Scaffold(
+            backgroundColor: AppColors.ink,
+            body: Center(child: CircularProgressIndicator(color: AppColors.unlock)),
+          );
+        }
+        return PrayerLockScreen(prayer: prayer);
+      },
     );
   }
 }
@@ -132,16 +190,18 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_checkUsageAccessSafely());
+      unawaited(_refreshOnResume());
     }
   }
 
-  Future<void> _checkUsageAccessSafely() async {
+  Future<void> _refreshOnResume() async {
+    final appState = context.read<AppState>();
     try {
-      await context.read<AppState>().checkUsageAccess();
+      await appState.checkUsageAccess();
+      await appState.loadAvailableApps(forceRefresh: true);
     } catch (error, stack) {
-      debugPrint('Kadd: Usage access check failed: $error');
-      debugPrint('Kadd: Usage access stack:\n$stack');
+      debugPrint('Kadd: resume refresh failed: $error');
+      debugPrint('Kadd: resume refresh stack:\n$stack');
     }
   }
 
@@ -158,26 +218,10 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
             if (mounted) setState(() => _index = index);
           },
           destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.lock_outline),
-              selectedIcon: Icon(Icons.lock),
-              label: 'الرئيسية',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.apps_outlined),
-              selectedIcon: Icon(Icons.apps),
-              label: 'التطبيقات',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.mosque_outlined),
-              selectedIcon: Icon(Icons.mosque),
-              label: 'الصلاة',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.bar_chart_outlined),
-              selectedIcon: Icon(Icons.bar_chart),
-              label: 'الإحصائيات',
-            ),
+            NavigationDestination(icon: Icon(Icons.lock_outline), selectedIcon: Icon(Icons.lock), label: 'الرئيسية'),
+            NavigationDestination(icon: Icon(Icons.apps_outlined), selectedIcon: Icon(Icons.apps), label: 'التطبيقات'),
+            NavigationDestination(icon: Icon(Icons.mosque_outlined), selectedIcon: Icon(Icons.mosque), label: 'الصلاة'),
+            NavigationDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart), label: 'الإحصائيات'),
           ],
         ),
       ),
