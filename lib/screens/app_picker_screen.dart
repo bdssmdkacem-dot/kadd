@@ -21,9 +21,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _refreshApps(showErrors: false);
-      }
+      if (mounted) _refreshApps(showErrors: false);
     });
   }
 
@@ -35,9 +33,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
-      _refreshApps(showErrors: false);
-    }
+    if (state == AppLifecycleState.resumed && mounted) _refreshApps(showErrors: false);
   }
 
   Future<void> _refreshApps({required bool showErrors}) async {
@@ -47,15 +43,11 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
       await appState.loadAvailableApps(forceRefresh: true);
     } catch (error) {
       if (!showErrors || !mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر تحميل التطبيقات: $error')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تحميل التطبيقات: $error')));
     }
   }
 
-  Future<void> _openUsageAccessSettings() async {
-    await context.read<AppState>().requestUsageAccess();
-  }
+  Future<void> _openUsageAccessSettings() async => context.read<AppState>().requestUsageAccess();
 
   Future<void> _setLocked(AppState state, String packageName, bool locked) async {
     if (_busyPackage != null) return;
@@ -65,17 +57,10 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
         await _openUsageAccessSettings();
         return;
       }
-      if (locked) {
-        await state.addLockedApp(packageName);
-      } else {
-        await state.removeLockedApp(packageName);
-      }
+      if (locked) await state.addLockedApp(packageName);
+      else await state.removeLockedApp(packageName);
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تحديث القفل: $error')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تحديث القفل: $error')));
     } finally {
       if (mounted) setState(() => _busyPackage = null);
     }
@@ -85,9 +70,8 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final lockedPackages = state.apps.map((a) => a.packageName).toSet();
-    final filtered = state.availableApps
-        .where((a) => a.name.toLowerCase().contains(_query.toLowerCase()))
-        .toList();
+    final query = _query.trim().toLowerCase();
+    final filtered = state.availableApps.where((a) => a.name.toLowerCase().contains(query)).toList();
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -101,24 +85,12 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                   child: Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_forward, color: AppColors.text),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      Expanded(
-                        child: Text('اختر تطبيقًا لتقفله', style: AppTextStyles.kufi(size: 17)),
-                      ),
+                      IconButton(icon: const Icon(Icons.arrow_forward, color: AppColors.text), onPressed: () => Navigator.pop(context)),
+                      Expanded(child: Text('اختر تطبيقًا لتقفله', style: AppTextStyles.kufi(size: 17))),
                       if (state.loadingAvailableApps)
-                        const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.unlock),
-                        )
+                        const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.unlock))
                       else
-                        IconButton(
-                          icon: const Icon(Icons.refresh, color: AppColors.textDim),
-                          onPressed: () => _refreshApps(showErrors: true),
-                        ),
+                        IconButton(icon: const Icon(Icons.refresh, color: AppColors.textDim), onPressed: () => _refreshApps(showErrors: true)),
                     ],
                   ),
                 ),
@@ -133,19 +105,12 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                         onTap: _openUsageAccessSettings,
                         child: Padding(
                           padding: const EdgeInsets.all(14),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.security_outlined, color: AppColors.unlock),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'فعّل صلاحية الوصول إلى بيانات الاستخدام حتى يعمل قفل التطبيقات.',
-                                  style: AppTextStyles.body(size: 11.5, color: AppColors.textDim),
-                                ),
-                              ),
-                              const Icon(Icons.arrow_back_ios_new, size: 15, color: AppColors.textFaint),
-                            ],
-                          ),
+                          child: Row(children: [
+                            const Icon(Icons.security_outlined, color: AppColors.unlock),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text('فعّل صلاحية الوصول إلى بيانات الاستخدام حتى يعمل قفل التطبيقات.', style: AppTextStyles.body(size: 11.5, color: AppColors.textDim))),
+                            const Icon(Icons.arrow_back_ios_new, size: 15, color: AppColors.textFaint),
+                          ]),
                         ),
                       ),
                     ),
@@ -161,19 +126,19 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                       prefixIcon: const Icon(Icons.search, color: AppColors.textFaint),
                       filled: true,
                       fillColor: AppColors.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.line),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.line),
-                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.line)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.line)),
                       contentPadding: const EdgeInsets.symmetric(vertical: 0),
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 2),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('${state.availableApps.length} تطبيقًا متاحًا', style: AppTextStyles.body(size: 11, color: AppColors.textFaint)),
+                  ),
+                ),
                 Expanded(
                   child: !state.loadingAvailableApps && filtered.isEmpty
                       ? Center(
@@ -185,20 +150,20 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                                 const Icon(Icons.apps_outlined, size: 42, color: AppColors.textFaint),
                                 const SizedBox(height: 12),
                                 Text(
-                                  state.availableApps.isEmpty
-                                      ? 'لم تظهر التطبيقات المثبتة بعد — اضغط تحديث بعد تفعيل الصلاحية'
-                                      : 'ما لقيتش نتيجة',
+                                  state.availableApps.isEmpty ? 'لم تظهر التطبيقات المثبتة بعد.' : 'ما لقيتش نتيجة',
                                   textAlign: TextAlign.center,
                                   style: AppTextStyles.body(size: 13, color: AppColors.textFaint),
                                 ),
                                 if (state.availableApps.isEmpty && state.availableAppsError != null) ...[
                                   const SizedBox(height: 8),
-                                  Text(
-                                    'سبب المشكل: ${state.availableAppsError}',
-                                    textAlign: TextAlign.center,
-                                    style: AppTextStyles.body(size: 11, color: AppColors.textDim),
-                                  ),
+                                  Text('تشخيص: ${state.availableAppsError}', textAlign: TextAlign.center, style: AppTextStyles.body(size: 11, color: AppColors.textDim)),
                                 ],
+                                const SizedBox(height: 12),
+                                OutlinedButton.icon(
+                                  onPressed: state.loadingAvailableApps ? null : () => _refreshApps(showErrors: true),
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                  label: const Text('تحديث قائمة التطبيقات'),
+                                ),
                               ],
                             ),
                           ),
@@ -221,36 +186,18 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                     decoration: BoxDecoration(
                                       color: AppColors.surface,
-                                      border: Border.all(
-                                        color: isLocked ? AppColors.signal : AppColors.line,
-                                        width: isLocked ? 1.3 : 1,
-                                      ),
+                                      border: Border.all(color: isLocked ? AppColors.signal : AppColors.line, width: isLocked ? 1.3 : 1),
                                       borderRadius: BorderRadius.circular(14),
                                     ),
-                                    child: Row(
-                                      children: [
-                                        AppIcon(iconBytes: app.icon),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            app.name,
-                                            style: AppTextStyles.body(size: 13.5, weight: FontWeight.w600),
-                                          ),
-                                        ),
-                                        if (isBusy)
-                                          const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(strokeWidth: 2),
-                                          )
-                                        else
-                                          Switch(
-                                            value: isLocked,
-                                            activeThumbColor: AppColors.signal,
-                                            onChanged: (v) => _setLocked(state, app.packageName, v),
-                                          ),
-                                      ],
-                                    ),
+                                    child: Row(children: [
+                                      AppIcon(iconBytes: app.icon),
+                                      const SizedBox(width: 12),
+                                      Expanded(child: Text(app.name, style: AppTextStyles.body(size: 13.5, weight: FontWeight.w600))),
+                                      if (isBusy)
+                                        const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                      else
+                                        Switch(value: isLocked, activeThumbColor: AppColors.signal, onChanged: (v) => _setLocked(state, app.packageName, v)),
+                                    ]),
                                   ),
                                 ),
                               ),
