@@ -104,7 +104,10 @@ class _PrayerSettingsScreenState extends State<PrayerSettingsScreen> with Widget
                           label: 'فتح إعدادات المنبّهات',
                           onPressed: () async {
                             await _usageService.requestExactAlarmAccess();
+                            if (!mounted) return;
                             await _refreshNativePrayerState();
+                            if (!mounted || _exactAlarmAccess != true) return;
+                            await context.read<AppState>().refreshPrayerTimes();
                           },
                         ),
                       ],
@@ -153,11 +156,7 @@ class _PrayerSettingsScreenState extends State<PrayerSettingsScreen> with Widget
                                 ],
                               ),
                             ),
-                            Switch(
-                              value: p.enabled,
-                              activeThumbColor: AppColors.signal,
-                              onChanged: (v) => state.togglePrayer(p, v),
-                            ),
+                            Switch(value: p.enabled, activeThumbColor: AppColors.signal, onChanged: (v) => state.togglePrayer(p, v)),
                           ],
                         ),
                       ),
