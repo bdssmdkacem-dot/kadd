@@ -37,6 +37,32 @@ class AppState extends ChangeNotifier {
   Object? get availableAppsError => _installedAppsService.lastError;
   Map<String, dynamic> get appDiscoveryDiagnostics => _installedAppsService.lastDiagnostics;
 
+  /// The next enabled prayer based on the currently loaded local times.
+  /// Returns null when today's times have not loaded or all remaining prayers
+  /// have passed; callers can use [tomorrowFirstEnabledPrayer] for the latter.
+  PrayerSetting? get nextPrayer {
+    final now = DateTime.now();
+    for (final prayer in prayers) {
+      final time = prayer.timeToday;
+      if (prayer.enabled && time != null && time.isAfter(now)) return prayer;
+    }
+    return null;
+  }
+
+  Duration? get timeUntilNextPrayer {
+    final prayer = nextPrayer;
+    final time = prayer?.timeToday;
+    if (time == null) return null;
+    return time.difference(DateTime.now());
+  }
+
+  PrayerSetting? get tomorrowFirstEnabledPrayer {
+    for (final prayer in prayers) {
+      if (prayer.enabled) return prayer;
+    }
+    return null;
+  }
+
   final PrayerTimesService _prayerTimesService = PrayerTimesService();
   final AppUsageService _usageService = AppUsageService();
   final InstalledAppsService _installedAppsService = InstalledAppsService();
@@ -171,9 +197,7 @@ class AppState extends ChangeNotifier {
     repsThisWeek = prefs.getInt('repsThisWeek') ?? 0;
 
     final weekKey = _weekKey(DateTime.now());
-    if (prefs.getString('repsWeekKey') != weekKey) {
-      repsThisWeek = 0;
-    }
+    if (prefs.getString('repsWeekKey') != weekKey) repsThisWeek = 0;
 
     final todayKey = _dayKey(DateTime.now());
     minutesEarnedToday = prefs.getString('statsDayKey') == todayKey
@@ -259,13 +283,16 @@ class AppState extends ChangeNotifier {
   Future<void> refreshPrayerTimes() async {
     try {
       final result = await _prayerTimesService.fetchTodayTimings(selectedCity);
-      for (final p in prayers) {
-        p.timeToday = result.timings[p.name.aladhanKey];
-      }
-      await _usageService.scheduleAthanLocks(prayers.where((p) => p.enabled && p.timeToday != null).toList(), delayMinutesAfterAthan);
+      for (final p in prayers) p.timeToday = result.timings[p.name.aladhanKey];
+      await _usageService.scheduleAthanLocks(
+        prayers.where((p) => p.enabled && p.timeToday != null).toList(),
+        delayMinutesAfterAthan,
+        cityName: selectedCity.aladhanName,
+      );
       notifyListeners();
     } catch (e) {
       debugPrint('Prayer time fetch failed: $e');
+      notifyListeners();
     }
   }
 
