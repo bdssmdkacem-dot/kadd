@@ -1,5 +1,6 @@
 package com.comptaflow.kadd
 
+import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
@@ -25,6 +26,15 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "hasUsageAccess" -> result.success(hasUsageAccess())
                 "requestUsageAccess" -> { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); result.success(null) }
+                "canScheduleExactAlarms" -> result.success(canScheduleExactAlarms())
+                "requestExactAlarmAccess" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply { data = android.net.Uri.parse("package:$packageName") })
+                    }
+                    result.success(null)
+                }
+                "isAthanLockActive" -> result.success(LockPrefs.isAthanLockActive(this))
+                "activePrayerName" -> result.success(LockPrefs.getActivePrayerName(this))
                 "getLaunchableApps" -> try { result.success(discoverApps()) } catch (e: Exception) {
                     android.util.Log.e("Kadd", "App discovery failed", e)
                     result.error("APP_LIST_ERROR", e.message ?: "Unable to discover apps", null)
@@ -56,6 +66,12 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    private fun canScheduleExactAlarms(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return alarmManager.canScheduleExactAlarms()
     }
 
     private fun discoverySnapshot(): Pair<List<Map<String, Any?>>, Map<String, Int>> {
