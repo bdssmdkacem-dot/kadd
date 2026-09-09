@@ -8,35 +8,39 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 
 ## Current foundation
 
-- Flutter Android application with Arabic RTL UI.
-- Real installed-app picker using native Android package discovery.
-- Usage Access based foreground-app detection.
-- Native foreground locking service.
-- Exercise repetition detection with ML Kit Pose Detection.
-- Prayer-city selection and AlAdhan prayer-time integration.
-- Prayer-time lock scheduling with AlarmManager.
-- Prayer-rug verification pipeline using on-device image labeling.
-- Local persistence with SharedPreferences.
-- AdMob banner/interstitial integration with test identifiers.
-- GitHub Actions release APK build.
+- [x] Flutter Android application with Arabic RTL UI.
+- [x] Real installed-app picker using native Android package discovery.
+- [x] Usage Access based foreground-app detection.
+- [x] Native foreground locking service.
+- [x] Exercise repetition detection with ML Kit Pose Detection.
+- [x] Prayer-city selection and AlAdhan prayer-time integration.
+- [x] Prayer-time lock scheduling with AlarmManager.
+- [x] Persistent next-prayer alarms restored after reboot/app update.
+- [x] Prayer-rug verification pipeline using on-device image labeling.
+- [x] Local persistence with SharedPreferences.
+- [x] AdMob integration.
+- [x] GitHub Actions release APK build.
 
-## Phase 1 — Stabilization (current)
+## Phase 1 — Stabilization
 
 - [x] Remove fabricated home-screen repetition progress.
 - [x] Persist daily earnings with a calendar-day boundary.
 - [x] Persist activity dates and calculate a real current streak.
+- [x] Make weekly repetition totals reset at the calendar-week boundary.
 - [ ] Add automated unit/widget coverage for models and state transitions.
 - [ ] Verify every native lock transition on a physical Android device.
 - [ ] Verify prayer alarm scheduling across reboot and device idle modes.
 - [ ] Verify camera orientation/pose thresholds on multiple Android devices.
-- [ ] Add structured user-facing error states instead of silent initialization failures.
+- [x] Add structured user-facing app-discovery error/diagnostic states.
 
 ## Phase 2 — Complete core experience
 
-- [ ] First-run onboarding explaining exactly how app locking works.
-- [ ] Guided Usage Access permission flow with verification after returning from Settings.
-- [ ] App picker search, installed-app refresh, locked/unlocked filtering, and empty/error states.
-- [ ] Per-app exercise target preview and difficulty configuration.
+- [x] First-run onboarding explaining exactly how app locking works.
+- [x] Guided Usage Access permission flow with verification after returning from Settings.
+- [x] App picker search, installed-app refresh, locked/unlocked filtering, and empty/error states.
+- [x] Per-app exercise target and unlock-duration configuration.
+- [x] Defensive persistence and validation of per-app configuration.
+- [x] Independent initialization of app discovery and prayer refresh so network failure does not block the app.
 - [ ] Reliable exercise session state: current reps, target, pause/retry, lost-tracking recovery, completion.
 - [ ] Prayer setup: city, enabled prayers, delay, next prayer status, and clear active-lock state.
 - [ ] Prayer verification flow with camera guidance and failure/retry handling.
@@ -47,9 +51,10 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 
 - [ ] Idempotent native lock/unlock state transitions.
 - [ ] Safe handling of package removal/uninstall while an app is locked.
-- [ ] Recovery after process death, reboot, force-stop, and app update.
+- [x] Recovery after reboot for persisted app locks and known prayer alarms.
+- [ ] Recovery after process death and app update beyond boot receiver restoration.
 - [ ] Prevent stale unlock windows and stale prayer locks.
-- [ ] Validate all MethodChannel arguments defensively on the Kotlin side.
+- [x] Validate persisted MethodChannel/app configuration data defensively.
 - [ ] Avoid logging package lists or other unnecessary user/device data.
 - [ ] Add regression tests for every discovered production bug.
 
