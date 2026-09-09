@@ -11,7 +11,7 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.android.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.util.Locale
@@ -49,7 +49,14 @@ class MainActivity : FlutterActivity() {
                 "scheduleAthanLocks" -> {
                     @Suppress("UNCHECKED_CAST")
                     val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
-                    AthanAlarmScheduler.schedule(this, prayers, call.argument<Int>("delayMinutes") ?: 5)
+                    val enabled = call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String }
+                    AthanAlarmScheduler.schedule(
+                        this,
+                        prayers,
+                        call.argument<Int>("delayMinutes") ?: 5,
+                        call.argument<String>("cityName"),
+                        enabled,
+                    )
                     result.success(null)
                 }
                 else -> result.notImplemented()
