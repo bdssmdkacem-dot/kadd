@@ -43,7 +43,7 @@ class SettingsScreen extends StatelessWidget {
                 decoration: const InputDecoration(labelText: 'دقائق الفتح', helperText: 'من 1 إلى 180 دقيقة'),
                 validator: (value) {
                   final n = int.tryParse(value ?? '');
-                  return n == null || n < 1 || n > 180 ? 'أدخل رقمًا بين 1 و180' : null;
+                  return n == null || n < 1 || n > 180 ? 'أدخل رقمًا بين 1 و180 دقيقة' : null;
                 },
               ),
             ],
@@ -175,15 +175,19 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 KaddCard(
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.restart_alt, color: AppColors.signal),
-                    title: Text('إعادة ضبط بيانات كدّ', style: AppTextStyles.body(size: 13.5)),
-                    subtitle: Text('يحذف التطبيقات المقفلة والإحصائيات والإعدادات المحلية', style: AppTextStyles.body(size: 10.5, color: AppColors.textFaint)),
-                    onTap: () async {
-                      final confirmed = await showDialog<bool>(context: context, builder: (_) => AlertDialog(backgroundColor: AppColors.surface, title: const Text('تأكيد إعادة الضبط'), content: const Text('سيتم حذف كل بيانات كدّ المحلية. هل تريد المتابعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('إعادة الضبط'))])) ?? false;
-                      if (confirmed && context.mounted) await context.read<AppState>().resetAllData();
-                    },
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.restart_alt, color: AppColors.signal),
+                      title: Text('إعادة ضبط بيانات كدّ', style: AppTextStyles.body(size: 13.5)),
+                      subtitle: Text('يحذف التطبيقات المقفلة والإحصائيات والإعدادات المحلية', style: AppTextStyles.body(size: 10.5, color: AppColors.textFaint)),
+                      onTap: () async {
+                        final confirmed = await showDialog<bool>(context: context, builder: (_) => AlertDialog(backgroundColor: AppColors.surface, title: const Text('تأكيد إعادة الضبط'), content: const Text('سيتم حذف كل بيانات كدّ المحلية. هل تريد المتابعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('إعادة الضبط'))])) ?? false;
+                        if (confirmed && context.mounted) await context.read<AppState>().resetAllData();
+                      },
+                    ),
                   ),
                 ),
               ],
