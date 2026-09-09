@@ -98,10 +98,7 @@ class _PrayerSettingsScreenState extends State<PrayerSettingsScreen> with Widget
                       children: [
                         Text('السماح بالمنبّهات والتذكيرات مطلوب', style: AppTextStyles.body(size: 13, weight: FontWeight.w700)),
                         const SizedBox(height: 5),
-                        Text(
-                          'يحتاج Kadd إلى منبّه دقيق حتى يبدأ قفل الصلاة في وقتها حتى عند إغلاق التطبيق أو دخول الهاتف في وضع السكون.',
-                          style: AppTextStyles.body(size: 11, color: AppColors.textFaint),
-                        ),
+                        Text('يحتاج Kadd إلى منبّه دقيق حتى يبدأ قفل الصلاة في وقتها حتى عند إغلاق التطبيق أو دخول الهاتف في وضع السكون.', style: AppTextStyles.body(size: 11, color: AppColors.textFaint)),
                         const SizedBox(height: 10),
                         KaddPrimaryButton(
                           label: 'فتح إعدادات المنبّهات',
@@ -203,8 +200,10 @@ class _PrayerSettingsScreenState extends State<PrayerSettingsScreen> with Widget
   }
 
   String _labelFor(String name) {
-    final prayer = PrayerName.values.where((item) => item.name == name).firstOrNull;
-    return prayer?.labelAr ?? name;
+    for (final prayer in PrayerName.values) {
+      if (prayer.name == name) return prayer.labelAr;
+    }
+    return name;
   }
 
   void _showCityPicker(BuildContext context, AppState state) {
