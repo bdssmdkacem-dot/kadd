@@ -164,6 +164,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadFromDisk() async {
     final prefs = await SharedPreferences.getInstance();
+    onboardingComplete = prefs.getBool('onboardingComplete') ?? false;
     final difficultyIndex = prefs.getInt('difficulty') ?? Difficulty.medium.index;
     difficulty = Difficulty.values[difficultyIndex.clamp(0, Difficulty.values.length - 1)];
     delayMinutesAfterAthan = (prefs.getInt('delayMinutes') ?? 5).clamp(0, 60);
