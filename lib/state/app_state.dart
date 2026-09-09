@@ -27,12 +27,15 @@ class AppState extends ChangeNotifier {
   final Set<String> _activityDates = <String>{};
 
   bool hasUsageAccess = false;
+  bool isInitialized = false;
+  bool onboardingComplete = false;
 
   List<InstalledApp> availableApps = [];
   bool loadingAvailableApps = false;
   final Map<String, InstalledApp> _appInfoCache = {};
 
   Object? get availableAppsError => _installedAppsService.lastError;
+  Map<String, dynamic> get appDiscoveryDiagnostics => _installedAppsService.lastDiagnostics;
 
   final PrayerTimesService _prayerTimesService = PrayerTimesService();
   final AppUsageService _usageService = AppUsageService();
@@ -45,11 +48,10 @@ class AppState extends ChangeNotifier {
       debugPrint('Kadd: loading saved state failed: $e\n$st');
     }
 
-    try {
-      await refreshPrayerTimes();
-    } catch (e, st) {
-      debugPrint('Kadd: prayer initialization failed: $e\n$st');
-    }
+    // Mark the local state ready before network work so native lock activities
+    // can render from persisted data without waiting for prayer API calls.
+    isInitialized = true;
+    notifyListeners();
 
     try {
       await checkUsageAccess();
@@ -63,7 +65,10 @@ class AppState extends ChangeNotifier {
       debugPrint('Kadd: initial lock sync failed: $e\n$st');
     }
 
-    await loadAvailableApps();
+    // Prayer refresh and app discovery are deliberately independent so a
+    // network/OEM failure cannot prevent the rest of Kadd from becoming usable.
+    unawaited(refreshPrayerTimes());
+    unawaited(loadAvailableApps());
   }
 
   Future<void> checkUsageAccess() async {
@@ -74,14 +79,21 @@ class AppState extends ChangeNotifier {
   Future<void> requestUsageAccess() => _usageService.requestUsageAccess();
 
   Future<void> loadAvailableApps({bool forceRefresh = false}) async {
+    if (loadingAvailableApps) return;
     loadingAvailableApps = true;
     notifyListeners();
     try {
+      Object? lastError;
       for (var attempt = 0; attempt < 3; attempt++) {
-        availableApps = await _installedAppsService.getLaunchableApps(
-          forceRefresh: forceRefresh || attempt > 0,
-        );
-        if (availableApps.isNotEmpty) break;
+        try {
+          availableApps = await _installedAppsService.getLaunchableApps(
+            forceRefresh: forceRefresh || attempt > 0,
+          );
+          lastError = null;
+          if (availableApps.isNotEmpty) break;
+        } catch (e) {
+          lastError = e;
+        }
         if (attempt < 2) {
           await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
         }
@@ -91,6 +103,9 @@ class AppState extends ChangeNotifier {
         ..clear()
         ..addEntries(availableApps.map((info) => MapEntry(info.packageName, info)));
 
+      if (availableApps.isEmpty && lastError != null) {
+        debugPrint('Kadd: app discovery failed after retries: $lastError');
+      }
       debugPrint('Kadd: Flutter received ${availableApps.length} available apps');
     } finally {
       loadingAvailableApps = false;
@@ -103,20 +118,26 @@ class AppState extends ChangeNotifier {
   Uint8List? iconFor(String packageName) => _appInfoCache[packageName]?.icon;
 
   Future<void> _syncLockedPackages() async {
-    await _usageService.syncLockedPackages(
-      apps.where((a) => a.isEnabled).map((a) => a.packageName).toList(),
-    );
+    final validPackages = apps
+        .where((a) => a.isEnabled && a.packageName.trim().isNotEmpty)
+        .map((a) => a.packageName.trim())
+        .toSet()
+        .toList();
+    await _usageService.syncLockedPackages(validPackages);
   }
 
   Future<void> addLockedApp(String packageName) async {
-    if (apps.any((a) => a.packageName == packageName)) return;
-    apps.add(LockedApp(packageName: packageName));
+    final normalized = packageName.trim();
+    if (normalized.isEmpty || apps.any((a) => a.packageName == normalized)) return;
+    apps.add(LockedApp(packageName: normalized));
     notifyListeners();
     try {
       await _persistApps();
       await _syncLockedPackages();
     } catch (e) {
-      debugPrint('Kadd: failed to sync newly locked app $packageName: $e');
+      apps.removeWhere((a) => a.packageName == normalized);
+      notifyListeners();
+      debugPrint('Kadd: failed to sync newly locked app $normalized: $e');
       rethrow;
     }
   }
@@ -138,9 +159,11 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadFromDisk() async {
     final prefs = await SharedPreferences.getInstance();
-    difficulty = Difficulty.values[prefs.getInt('difficulty') ?? Difficulty.medium.index];
-    delayMinutesAfterAthan = prefs.getInt('delayMinutes') ?? 5;
+    final difficultyIndex = prefs.getInt('difficulty') ?? Difficulty.medium.index;
+    difficulty = Difficulty.values[difficultyIndex.clamp(0, Difficulty.values.length - 1)];
+    delayMinutesAfterAthan = (prefs.getInt('delayMinutes') ?? 5).clamp(0, 60);
     repsThisWeek = prefs.getInt('repsThisWeek') ?? 0;
+    onboardingComplete = prefs.getBool('onboardingComplete') ?? false;
 
     final todayKey = _dayKey(DateTime.now());
     minutesEarnedToday = prefs.getString('statsDayKey') == todayKey
@@ -165,7 +188,11 @@ class AppState extends ChangeNotifier {
     if (appsJson != null) {
       try {
         final decoded = jsonDecode(appsJson) as List;
-        apps = decoded.map((j) => LockedApp.fromJson(j as Map<String, dynamic>)).toList();
+        apps = decoded
+            .whereType<Map>()
+            .map((j) => LockedApp.fromJson(Map<String, dynamic>.from(j)))
+            .where((a) => a.packageName.trim().isNotEmpty)
+            .toList();
       } catch (e) {
         debugPrint('Failed to decode saved locked apps: $e');
       }
@@ -190,6 +217,29 @@ class AppState extends ChangeNotifier {
       'enabledPrayerNames',
       prayers.where((p) => p.enabled).map((p) => p.name.name).toList(),
     );
+  }
+
+  Future<void> completeOnboarding() async {
+    onboardingComplete = true;
+    notifyListeners();
+    await (await SharedPreferences.getInstance()).setBool('onboardingComplete', true);
+  }
+
+  Future<void> resetAllData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    apps = [];
+    difficulty = Difficulty.medium;
+    prayers = defaultPrayerSettings();
+    delayMinutesAfterAthan = 5;
+    selectedCity = moroccanCities.first;
+    repsThisWeek = 0;
+    minutesEarnedToday = 0;
+    streakDays = 0;
+    _activityDates.clear();
+    onboardingComplete = false;
+    await _usageService.syncLockedPackages(const []);
+    notifyListeners();
   }
 
   Future<void> setCity(MoroccanCity city) async {
