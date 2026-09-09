@@ -50,13 +50,7 @@ class MainActivity : FlutterActivity() {
                     @Suppress("UNCHECKED_CAST")
                     val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
                     val enabled = call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String }
-                    AthanAlarmScheduler.schedule(
-                        this,
-                        prayers,
-                        call.argument<Int>("delayMinutes") ?: 5,
-                        call.argument<String>("cityName"),
-                        enabled,
-                    )
+                    AthanAlarmScheduler.schedule(this, prayers, call.argument<Int>("delayMinutes") ?: 5, call.argument<String>("cityName"), enabled)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -73,7 +67,6 @@ class MainActivity : FlutterActivity() {
             val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
             if (appInfo.packageName != ownPackage) addApp(byPackage, appInfo)
         }
-
         val installed = if (Build.VERSION.SDK_INT >= 33) {
             packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
         } else {
@@ -83,7 +76,6 @@ class MainActivity : FlutterActivity() {
             if (appInfo.packageName == ownPackage) return@forEach
             if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) addApp(byPackage, appInfo)
         }
-
         val apps = byPackage.values.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
         val counts = mapOf("launcherCount" to launcherActivities.size, "installedCount" to installed.size, "launchableCount" to apps.size)
         return Pair(apps, counts)
@@ -93,12 +85,7 @@ class MainActivity : FlutterActivity() {
 
     private fun discoveryDiagnostics(): Map<String, Any> {
         val snapshot = discoverySnapshot()
-        return mapOf(
-            "launcherCount" to (snapshot.second["launcherCount"] ?: 0),
-            "installedCount" to (snapshot.second["installedCount"] ?: 0),
-            "launchableCount" to (snapshot.second["launchableCount"] ?: 0),
-            "ownPackage" to applicationContext.packageName,
-        )
+        return mapOf("launcherCount" to (snapshot.second["launcherCount"] ?: 0), "installedCount" to (snapshot.second["installedCount"] ?: 0), "launchableCount" to (snapshot.second["launchableCount"] ?: 0), "ownPackage" to applicationContext.packageName)
     }
 
     private fun addApp(destination: MutableMap<String, Map<String, Any?>>, appInfo: ApplicationInfo) {
