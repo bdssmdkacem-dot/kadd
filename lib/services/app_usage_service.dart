@@ -43,7 +43,11 @@ class AppUsageService {
     await _channel.invokeMethod('grantAthanUnlock');
   }
 
-  Future<void> scheduleAthanLocks(List<PrayerSetting> enabledPrayers, int delayMinutes) async {
+  Future<void> scheduleAthanLocks(
+    List<PrayerSetting> enabledPrayers,
+    int delayMinutes, {
+    String? cityName,
+  }) async {
     await _channel.invokeMethod('scheduleAthanLocks', {
       'prayers': enabledPrayers
           .map((p) => {
@@ -52,6 +56,8 @@ class AppUsageService {
               })
           .toList(),
       'delayMinutes': delayMinutes,
+      if (cityName != null) 'cityName': cityName,
+      'enabledPrayerNames': enabledPrayers.map((p) => p.name.name).toList(),
     });
   }
 }
