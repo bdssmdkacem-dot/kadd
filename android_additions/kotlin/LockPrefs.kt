@@ -13,6 +13,9 @@ object LockPrefs {
     private const val KEY_ATHAN_LOCK_ACTIVE = "athan_lock_active"
     private const val KEY_ACTIVE_PRAYER_NAME = "active_prayer_name"
     private const val KEY_ATHAN_LOCK_STARTED_AT = "athan_lock_started_at"
+    private const val KEY_LOCK_ACTIVITY_ACTIVE = "lock_activity_active"
+    private const val KEY_LOCK_ACTIVITY_RESUMED = "lock_activity_resumed"
+    private const val KEY_LOCK_ACTIVITY_PACKAGE = "lock_activity_package"
     private const val MAX_ATHAN_LOCK_AGE_MS = 24L * 60L * 60L * 1000L
 
     fun setLockedPackages(context: Context, packages: List<String>) {
@@ -83,6 +86,40 @@ object LockPrefs {
 
     fun grantAthanUnlockForCurrentWindow(context: Context) {
         clearAthanLock(context)
+    }
+
+    /** Records which package the full-screen verification activity is protecting. */
+    fun markLockActivityResumed(context: Context, packageName: String?) {
+        prefs(context).edit()
+            .putBoolean(KEY_LOCK_ACTIVITY_ACTIVE, true)
+            .putBoolean(KEY_LOCK_ACTIVITY_RESUMED, true)
+            .putString(KEY_LOCK_ACTIVITY_PACKAGE, packageName?.trim().orEmpty())
+            .apply()
+    }
+
+    fun markLockActivityPaused(context: Context) {
+        prefs(context).edit().putBoolean(KEY_LOCK_ACTIVITY_RESUMED, false).apply()
+    }
+
+    fun markLockActivityDestroyed(context: Context) {
+        prefs(context).edit()
+            .putBoolean(KEY_LOCK_ACTIVITY_ACTIVE, false)
+            .putBoolean(KEY_LOCK_ACTIVITY_RESUMED, false)
+            .remove(KEY_LOCK_ACTIVITY_PACKAGE)
+            .apply()
+    }
+
+    /**
+     * Returns true only when the verification activity is actually resumed for
+     * the foreground package. This prevents the service from repeatedly
+     * recreating an existing lock screen while still allowing recovery when
+     * the user backgrounds it.
+     */
+    fun isLockActivityResumedFor(context: Context, packageName: String): Boolean {
+        val preferences = prefs(context)
+        return preferences.getBoolean(KEY_LOCK_ACTIVITY_ACTIVE, false) &&
+            preferences.getBoolean(KEY_LOCK_ACTIVITY_RESUMED, false) &&
+            preferences.getString(KEY_LOCK_ACTIVITY_PACKAGE, "") == packageName
     }
 
     /** Clears every persisted native lock/unlock flag during a full app reset. */
