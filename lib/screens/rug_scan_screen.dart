@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -24,10 +25,16 @@ class _RugScanScreenState extends State<RugScanScreen> {
   CameraController? _controller;
   final RugClassifier _classifier = RugClassifier();
   final List<double> _confidences = <double>[];
+  final List<DateTime> _captureTimes = <DateTime>[];
+  Timer? _captureCooldownTimer;
   bool _initializing = true;
   bool _capturing = false;
   bool _verifying = false;
+  DateTime? _nextCaptureAt;
   String? _error;
+
+  bool get _captureCoolingDown =>
+      _nextCaptureAt != null && DateTime.now().isBefore(_nextCaptureAt!);
 
   @override
   void initState() {
@@ -81,18 +88,29 @@ class _RugScanScreenState extends State<RugScanScreen> {
         !controller.value.isInitialized ||
         !_classifier.isLoaded ||
         _capturing ||
-        _verifying) {
+        _verifying ||
+        _captureCoolingDown) {
       return;
     }
 
-    setState(() => _capturing = true);
+    setState(() {
+      _capturing = true;
+      _error = null;
+    });
     String? imagePath;
     try {
       final file = await controller.takePicture();
       imagePath = file.path;
       final confidence = await _classifier.classify(file.path);
       if (!mounted) return;
-      setState(() => _confidences.add(confidence));
+
+      final capturedAt = DateTime.now();
+      setState(() {
+        _confidences.add(confidence);
+        _captureTimes.add(capturedAt);
+        _nextCaptureAt = capturedAt.add(RugVerificationPolicy.minimumCaptureInterval);
+      });
+      _scheduleCooldownRefresh();
 
       if (_confidences.length >= RugVerificationPolicy.requiredCaptures) {
         await _finishVerification();
@@ -108,11 +126,22 @@ class _RugScanScreenState extends State<RugScanScreen> {
         try {
           await File(imagePath).delete();
         } catch (_) {
-          // Best-effort cleanup; a failed deletion must not break unlocking.
+          // Best-effort cleanup; images are never intentionally retained.
         }
       }
       if (mounted) setState(() => _capturing = false);
     }
+  }
+
+  void _scheduleCooldownRefresh() {
+    _captureCooldownTimer?.cancel();
+    final next = _nextCaptureAt;
+    if (next == null) return;
+    final remaining = next.difference(DateTime.now());
+    if (remaining <= Duration.zero || !mounted) return;
+    _captureCooldownTimer = Timer(remaining, () {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _finishVerification() async {
@@ -123,14 +152,20 @@ class _RugScanScreenState extends State<RugScanScreen> {
     });
 
     try {
-      final passed = RugVerificationPolicy.passes(_confidences);
+      final passed = RugVerificationPolicy.passes(
+        _confidences,
+        captureTimes: _captureTimes,
+      );
       if (!passed) {
         if (!mounted) return;
         setState(() {
           _confidences.clear();
+          _captureTimes.clear();
+          _nextCaptureAt = null;
           _verifying = false;
-          _error = 'لم ينجح التحقق من سجادة الصلاة. أعد المحاولة مع صورة أوضح.';
+          _error = 'لم ينجح التحقق. التقط الصور الثلاث مع تثبيت السجادة داخل الإطار.';
         });
+        _captureCooldownTimer?.cancel();
         return;
       }
 
@@ -152,6 +187,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
 
   @override
   void dispose() {
+    _captureCooldownTimer?.cancel();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _controller?.dispose();
     _classifier.dispose();
@@ -161,6 +197,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
+    final waiting = _captureCoolingDown;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -180,7 +217,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'التقط ثلاث صور متتالية للسجادة للتأكد من ثبات النتيجة.',
+                  'التقط ثلاث صور منفصلة. ثبّت السجادة داخل الإطار وانتظر لحظة بين كل صورة.',
                   textAlign: TextAlign.center,
                   style: AppTextStyles.body(size: 13, color: AppColors.textDim),
                 ),
@@ -206,6 +243,13 @@ class _RugScanScreenState extends State<RugScanScreen> {
                   'الصور: ${_confidences.length}/${RugVerificationPolicy.requiredCaptures}',
                   style: AppTextStyles.body(size: 13, color: AppColors.textDim),
                 ),
+                if (waiting) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'انتظر لحظة قبل الصورة التالية…',
+                    style: AppTextStyles.body(size: 12, color: AppColors.textDim),
+                  ),
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -218,13 +262,15 @@ class _RugScanScreenState extends State<RugScanScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _capturing || _verifying || _initializing ? null : _captureStep,
+                    onPressed: _capturing || _verifying || _initializing || waiting ? null : _captureStep,
                     child: Text(
                       _capturing
                           ? 'جارٍ التحليل…'
                           : _verifying
                               ? 'جارٍ التحقق…'
-                              : 'التقاط الصورة',
+                              : waiting
+                                  ? 'انتظر…'
+                                  : 'التقاط الصورة',
                     ),
                   ),
                 ),
