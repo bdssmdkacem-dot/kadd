@@ -18,11 +18,12 @@ jobs:
           java-version: '17'
 
       # Gradle's fallback signing configuration resolves the debug keystore
-      # from the Android SDK/user configuration directory. On GitHub-hosted
-      # runners this is $ANDROID_USER_HOME/.android, not $HOME/.android.
+      # from the Android SDK/user configuration directory used by the runner.
       - name: Provision CI debug keystore
+        shell: bash
         run: |
-          export ANDROID_USER_HOME="${ANDROID_USER_HOME:-$HOME/.config"
+          ANDROID_USER_HOME="${ANDROID_USER_HOME:-$HOME/.config}"
+          export ANDROID_USER_HOME
           mkdir -p "$ANDROID_USER_HOME/.android"
           keytool -genkeypair -v \
             -keystore "$ANDROID_USER_HOME/.android/debug.keystore" \
