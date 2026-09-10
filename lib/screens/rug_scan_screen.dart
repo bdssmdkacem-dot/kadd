@@ -81,7 +81,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
       if (!mounted) return;
       setState(() => _confidences.add(confidence));
 
-      if (_confidences.length >= RugVerificationPolicy.minimumCaptures) {
+      if (_confidences.length >= RugVerificationPolicy.requiredCaptures) {
         await _finishVerification();
       }
     } catch (error) {
@@ -182,7 +182,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'الصور: ${_confidences.length}/${RugVerificationPolicy.minimumCaptures}',
+                  'الصور: ${_confidences.length}/${RugVerificationPolicy.requiredCaptures}',
                   style: AppTextStyles.body(size: 13, color: AppColors.textDim),
                 ),
                 if (_error != null) ...[
