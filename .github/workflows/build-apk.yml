@@ -17,8 +17,7 @@ jobs:
           flutter-version: 3.41.9
           cache: true
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Validate Android platform
         run: |
@@ -43,37 +42,75 @@ jobs:
       - name: Generate launcher icons
         run: flutter pub run flutter_launcher_icons
 
-      # Informational lints are reported but are not a CI failure.
       - name: Static analysis
         run: flutter analyze --no-fatal-infos
 
       - name: Flutter tests
         run: flutter test
 
-      # Development CI artifact only. Production Play distribution must use
-      # a real upload/release key kept outside the repository; the debug key
-      # below is intentionally limited to CI verification/installable builds.
-      - name: Ensure Android debug signing key exists
+      # Production secrets are injected only when configured in GitHub.
+      # Without them, verification builds intentionally fall back to Google's
+      # official AdMob test IDs and the generated debug signing key.
+      - name: Configure release build inputs
+        env:
+          KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
+          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
+          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
+          KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
+          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
+          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
+          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
         run: |
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android \
-              -alias AndroidDebugKey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+          if [ -n "$KADD_RELEASE_KEYSTORE" ]; then
+            test -f "$KADD_RELEASE_KEYSTORE"
+          else
+            mkdir -p "$HOME/.android"
+            if [ ! -f "$HOME/.android/debug.keystore" ]; then
+              keytool -genkeypair -v \
+                -keystore "$HOME/.android/debug.keystore" \
+                -storepass android \
+                -alias AndroidDebugKey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+            echo "Using generated debug signing key for verification build."
           fi
 
       - name: Build release APK
+        env:
+          KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
+          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
+          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
+          KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
+          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
+          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
+          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
         run: flutter build apk --release -v
+
+      - name: Build release AAB
+        env:
+          KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
+          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
+          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
+          KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
+          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
+          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
+          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
+        run: flutter build appbundle --release -v
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: kadd-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: kadd-aab
+          path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
