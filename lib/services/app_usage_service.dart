@@ -49,7 +49,14 @@ class AppUsageService {
     });
   }
 
-  Future<void> grantAthanUnlock() => _channel.invokeMethod('grantAthanUnlock');
+  Future<void> grantAthanUnlock(PrayerName prayer) async {
+    final unlocked = await _channel.invokeMethod<bool>('grantAthanUnlock', {
+      'prayer': prayer.name,
+    }) ?? false;
+    if (!unlocked) {
+      throw StateError('Prayer lock is no longer active for ${prayer.name}');
+    }
+  }
 
   Future<void> scheduleAthanLocks(
     List<PrayerSetting> enabledPrayers,
