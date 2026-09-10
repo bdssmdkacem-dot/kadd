@@ -77,7 +77,11 @@ class _RugScanScreenState extends State<RugScanScreen> {
 
   Future<void> _captureStep() async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || !_classifier.isLoaded || _capturing || _verifying) {
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        !_classifier.isLoaded ||
+        _capturing ||
+        _verifying) {
       return;
     }
 
@@ -105,7 +109,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
       // never retain captured prayer-rug images after each verification step.
       if (imagePath != null) {
         try {
-          await File(imagePath!).delete();
+          await File(imagePath).delete();
         } catch (_) {
           // Best-effort cleanup; a failed deletion must not break unlocking.
         }
@@ -218,7 +222,13 @@ class _RugScanScreenState extends State<RugScanScreen> {
                   width: double.infinity,
                   child: FilledButton(
                     onPressed: _capturing || _verifying || _initializing ? null : _captureStep,
-                    child: Text(_capturing ? 'جارٍ التحليل…' : _verifying ? 'جارٍ التحقق…' : 'التقاط الصورة'),
+                    child: Text(
+                      _capturing
+                          ? 'جارٍ التحليل…'
+                          : _verifying
+                              ? 'جارٍ التحقق…'
+                              : 'التقاط الصورة',
+                    ),
                   ),
                 ),
               ],
