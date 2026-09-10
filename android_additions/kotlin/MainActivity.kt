@@ -20,6 +20,7 @@ import java.util.Locale
 class MainActivity : FlutterActivity() {
     private val channelName = "com.comptaflow.kadd/lock"
     private val maxExerciseUnlockMinutes = 180
+    private val supportedPrayerNames = setOf("fajr", "dhuhr", "asr", "maghrib", "isha")
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -45,7 +46,8 @@ class MainActivity : FlutterActivity() {
                     result.error("APP_DIAGNOSTICS_ERROR", e.message ?: "Unable to inspect installed apps", null)
                 }
                 "syncLockedPackages" -> {
-                    val packages = call.argument<List<String>>("packages") ?: emptyList()
+                    val requested = call.argument<List<String>>("packages") ?: emptyList()
+                    val packages = sanitizeLockedPackages(requested)
                     LockPrefs.setLockedPackages(this, packages)
                     if (packages.isEmpty()) stopService(Intent(this, LockForegroundService::class.java)) else LockForegroundService.ensureRunning(this)
                     result.success(null)
@@ -66,6 +68,9 @@ class MainActivity : FlutterActivity() {
                         !LockPrefs.getLockedPackages(this).contains(packageName) -> {
                             result.error("APP_NOT_LOCKED", "The requested package is not currently configured as locked", null)
                         }
+                        !isLaunchablePackage(packageName) -> {
+                            result.error("APP_NOT_AVAILABLE", "The requested app is no longer available on this device", null)
+                        }
                         LockPrefs.isAthanLockActive(this) -> {
                             result.error("PRAYER_LOCK_ACTIVE", "Exercise unlock is unavailable during the active prayer lock", null)
                         }
@@ -76,9 +81,9 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "grantAthanUnlock" -> {
-                    val requestedPrayer = call.argument<String>("prayer")?.trim()
-                    val activePrayer = LockPrefs.getActivePrayerName(this)
-                    if (requestedPrayer.isNullOrEmpty() || activePrayer == null || requestedPrayer != activePrayer) {
+                    val requestedPrayer = call.argument<String>("prayer")?.trim()?.lowercase(Locale.US)
+                    val activePrayer = LockPrefs.getActivePrayerName(this)?.lowercase(Locale.US)
+                    if (requestedPrayer.isNullOrEmpty() || requestedPrayer !in supportedPrayerNames || activePrayer == null || requestedPrayer != activePrayer) {
                         result.success(false)
                     } else {
                         LockPrefs.grantAthanUnlockForCurrentWindow(this)
@@ -88,8 +93,16 @@ class MainActivity : FlutterActivity() {
                 "scheduleAthanLocks" -> {
                     @Suppress("UNCHECKED_CAST")
                     val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
-                    val enabled = call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String }
-                    AthanAlarmScheduler.schedule(this, prayers, call.argument<Int>("delayMinutes") ?: 5, call.argument<String>("cityName"), enabled)
+                    val enabled = (call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String })
+                        .map { it.trim().lowercase(Locale.US) }
+                        .filter { it in supportedPrayerNames }
+                        .distinct()
+                    val safePrayers = prayers.filter { prayer ->
+                        val name = (prayer["name"] as? String)?.trim()?.lowercase(Locale.US)
+                        val epochMillis = (prayer["epochMillis"] as? Number)?.toLong()
+                        name in supportedPrayerNames && epochMillis != null && epochMillis > 0L
+                    }
+                    AthanAlarmScheduler.schedule(this, safePrayers, call.argument<Int>("delayMinutes") ?: 5, call.argument<String>("cityName"), enabled)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -101,6 +114,20 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         return alarmManager.canScheduleExactAlarms()
+    }
+
+    private fun sanitizeLockedPackages(requested: List<String>): List<String> = requested
+        .asSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && it != applicationContext.packageName }
+        .filter(::isLaunchablePackage)
+        .distinct()
+        .toList()
+
+    private fun isLaunchablePackage(packageName: String): Boolean = try {
+        packageName.isNotBlank() && packageManager.getLaunchIntentForPackage(packageName) != null
+    } catch (_: Exception) {
+        false
     }
 
     private fun discoverySnapshot(): Pair<List<Map<String, Any?>>, Map<String, Int>> {
