@@ -12,6 +12,29 @@ import '../services/ads_service.dart';
 import '../services/installed_apps_service.dart';
 import '../services/prayer_times_service.dart';
 
+class AppUsageSummary {
+  int reps;
+  int minutes;
+  int unlocks;
+  String? lastUnlockDate;
+
+  AppUsageSummary({this.reps = 0, this.minutes = 0, this.unlocks = 0, this.lastUnlockDate});
+
+  factory AppUsageSummary.fromJson(Map<String, dynamic> json) => AppUsageSummary(
+        reps: (json['reps'] as num?)?.toInt().clamp(0, 100000000) ?? 0,
+        minutes: (json['minutes'] as num?)?.toInt().clamp(0, 100000000) ?? 0,
+        unlocks: (json['unlocks'] as num?)?.toInt().clamp(0, 100000000) ?? 0,
+        lastUnlockDate: json['lastUnlockDate'] is String ? json['lastUnlockDate'] as String : null,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'reps': reps,
+        'minutes': minutes,
+        'unlocks': unlocks,
+        if (lastUnlockDate != null) 'lastUnlockDate': lastUnlockDate,
+      };
+}
+
 class AppState extends ChangeNotifier {
   List<LockedApp> apps = [];
   Difficulty difficulty = Difficulty.medium;
@@ -23,8 +46,14 @@ class AppState extends ChangeNotifier {
   int repsThisWeek = 0;
   int minutesEarnedToday = 0;
   int streakDays = 0;
+  int totalReps = 0;
+  int totalMinutesEarned = 0;
+  int prayerUnlocks = 0;
   final List<bool> last7Days = List.filled(7, false);
   final Set<String> _activityDates = <String>{};
+  final Map<String, AppUsageSummary> _appUsage = <String, AppUsageSummary>{};
+
+  Map<String, AppUsageSummary> get appUsageHistory => Map.unmodifiable(_appUsage);
 
   bool hasUsageAccess = false;
   bool isInitialized = false;
@@ -37,9 +66,6 @@ class AppState extends ChangeNotifier {
   Object? get availableAppsError => _installedAppsService.lastError;
   Map<String, dynamic> get appDiscoveryDiagnostics => _installedAppsService.lastDiagnostics;
 
-  /// The next enabled prayer based on the currently loaded local times.
-  /// Returns null when today's times have not loaded or all remaining prayers
-  /// have passed; callers can use [tomorrowFirstEnabledPrayer] for the latter.
   PrayerSetting? get nextPrayer {
     final now = DateTime.now();
     for (final prayer in prayers) {
@@ -195,6 +221,9 @@ class AppState extends ChangeNotifier {
     difficulty = Difficulty.values[difficultyIndex.clamp(0, Difficulty.values.length - 1)];
     delayMinutesAfterAthan = (prefs.getInt('delayMinutes') ?? 5).clamp(0, 60);
     repsThisWeek = prefs.getInt('repsThisWeek') ?? 0;
+    totalReps = prefs.getInt('totalReps') ?? 0;
+    totalMinutesEarned = prefs.getInt('totalMinutesEarned') ?? 0;
+    prayerUnlocks = prefs.getInt('prayerUnlocks') ?? 0;
 
     final weekKey = _weekKey(DateTime.now());
     if (prefs.getString('repsWeekKey') != weekKey) repsThisWeek = 0;
@@ -209,6 +238,22 @@ class AppState extends ChangeNotifier {
       ..addAll((prefs.getStringList('activityDates') ?? const <String>[]).where(_isValidDayKey));
     _pruneActivityDates();
     _rebuildStreak();
+
+    final historyJson = prefs.getString('appUsageHistory');
+    if (historyJson != null) {
+      try {
+        final decoded = jsonDecode(historyJson);
+        if (decoded is Map) {
+          _appUsage
+            ..clear()
+            ..addEntries(decoded.entries.where((e) => e.key is String && e.value is Map).map(
+                  (e) => MapEntry(e.key as String, AppUsageSummary.fromJson(Map<String, dynamic>.from(e.value as Map))),
+                ));
+        }
+      } catch (e) {
+        debugPrint('Failed to decode app usage history: $e');
+      }
+    }
 
     final cityName = prefs.getString('selectedCity');
     if (cityName != null) {
@@ -267,7 +312,11 @@ class AppState extends ChangeNotifier {
     repsThisWeek = 0;
     minutesEarnedToday = 0;
     streakDays = 0;
+    totalReps = 0;
+    totalMinutesEarned = 0;
+    prayerUnlocks = 0;
     _activityDates.clear();
+    _appUsage.clear();
     onboardingComplete = false;
     await _usageService.syncLockedPackages(const []);
     notifyListeners();
@@ -331,19 +380,30 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> onRepsVerified(LockedApp app) async {
-    repsThisWeek += app.repsFor(difficulty);
+    final reps = app.repsFor(difficulty);
+    await _usageService.grantTemporaryUnlock(app.packageName, app.minutesGranted);
+
+    repsThisWeek += reps;
     minutesEarnedToday += app.minutesGranted;
+    totalReps += reps;
+    totalMinutesEarned += app.minutesGranted;
+    final summary = _appUsage.putIfAbsent(app.packageName, () => AppUsageSummary());
+    summary
+      ..reps += reps
+      ..minutes += app.minutesGranted
+      ..unlocks += 1
+      ..lastUnlockDate = _dayKey(DateTime.now());
     _recordActivityToday();
     notifyListeners();
-    await _usageService.grantTemporaryUnlock(app.packageName, app.minutesGranted);
     await _persistStats();
     AdsService.instance.maybeShowInterstitialAfterUnlock();
   }
 
   Future<void> onRugVerified() async {
+    await _usageService.grantAthanUnlock();
+    prayerUnlocks += 1;
     _recordActivityToday();
     notifyListeners();
-    await _usageService.grantAthanUnlock();
     await _persistStats();
   }
 
@@ -391,7 +451,11 @@ class AppState extends ChangeNotifier {
     await prefs.setString('repsWeekKey', _weekKey(DateTime.now()));
     await prefs.setInt('minutesEarnedToday', minutesEarnedToday);
     await prefs.setInt('streakDays', streakDays);
+    await prefs.setInt('totalReps', totalReps);
+    await prefs.setInt('totalMinutesEarned', totalMinutesEarned);
+    await prefs.setInt('prayerUnlocks', prayerUnlocks);
     await prefs.setString('statsDayKey', _dayKey(DateTime.now()));
     await prefs.setStringList('activityDates', _activityDates.toList()..sort());
+    await prefs.setString('appUsageHistory', jsonEncode(_appUsage.map((key, value) => MapEntry(key, value.toJson()))));
   }
 }
