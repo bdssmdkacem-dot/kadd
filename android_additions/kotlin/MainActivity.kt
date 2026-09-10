@@ -12,7 +12,7 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.android.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.util.Locale
@@ -50,6 +50,7 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "clearAllLockState" -> {
+                    PrayerAlarmResetter.clear(this)
                     LockPrefs.clearAllLockState(this)
                     stopService(Intent(this, LockForegroundService::class.java))
                     result.success(null)
@@ -62,8 +63,6 @@ class MainActivity : FlutterActivity() {
                             result.error("INVALID_UNLOCK", "packageName and positive minutes are required", null)
                         }
                         LockPrefs.isAthanLockActive(this) -> {
-                            // Never queue an exercise unlock behind a prayer lock.
-                            // Otherwise it could become effective after the prayer lock ends.
                             result.error("PRAYER_LOCK_ACTIVE", "Exercise unlock is unavailable during the active prayer lock", null)
                         }
                         else -> {
