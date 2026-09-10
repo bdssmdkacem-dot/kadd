@@ -40,14 +40,19 @@ object LockPrefs {
         return active
     }
 
-    /** Removes expired exercise unlock deadlines even when their apps are not foreground. */
+    /** Removes expired or orphaned exercise unlock deadlines. */
     fun pruneExpiredUnlocks(context: Context) {
         if (isAthanLockActive(context)) return
         val now = System.currentTimeMillis()
+        val locked = getLockedPackages(context)
         val editor = prefs(context).edit()
         var changed = false
         prefs(context).all.forEach { (key, value) ->
-            if (key.startsWith("unlock_until_") && value is Long && value <= now) {
+            if (!key.startsWith("unlock_until_")) return@forEach
+            val packageName = key.removePrefix("unlock_until_")
+            val expired = value is Long && value <= now
+            val orphaned = packageName.isBlank() || packageName !in locked
+            if (expired || orphaned) {
                 editor.remove(key)
                 changed = true
             }
