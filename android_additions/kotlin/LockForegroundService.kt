@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Process
+import android.util.Log
 import androidx.core.app.NotificationCompat
 
 /**
@@ -30,8 +31,16 @@ class LockForegroundService : Service() {
 
     private val pollRunnable = object : Runnable {
         override fun run() {
-            checkForegroundApp()
-            handler.postDelayed(this, POLL_INTERVAL_MS)
+            try {
+                checkForegroundApp()
+            } catch (t: Throwable) {
+                // UsageStats/OEM task APIs can fail transiently. Keep the
+                // enforcement loop alive instead of losing protection until
+                // Android happens to recreate the service.
+                Log.w(TAG, "Lock enforcement poll failed; retrying", t)
+            } finally {
+                handler.postDelayed(this, POLL_INTERVAL_MS)
+            }
         }
     }
 
@@ -179,6 +188,7 @@ class LockForegroundService : Service() {
     }
 
     companion object {
+        private const val TAG = "KaddLock"
         private const val NOTIF_ID = 1001
         private const val POLL_INTERVAL_MS = 750L
         private const val LOOKBACK_MS = 15_000L
