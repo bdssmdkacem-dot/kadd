@@ -6,6 +6,7 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/kadd_card.dart';
 import '../widgets/kadd_background.dart';
+import '../models/city.dart';
 
 class PrayerSettingsScreen extends StatefulWidget {
   const PrayerSettingsScreen({super.key});
@@ -65,19 +66,22 @@ class _PrayerSettingsScreenState extends State<PrayerSettingsScreen> with Widget
   }
 
   Future<void> _showCityPicker(BuildContext context, AppState state) async {
-    final selected = await showModalBottomSheet<dynamic>(
+    final selected = await showModalBottomSheet<MoroccanCity>(
       context: context,
       backgroundColor: AppColors.surface,
       builder: (sheetContext) => SafeArea(
         child: ListView(
           shrinkWrap: true,
-          children: moroccanCities.map((city) => ListTile(
-            title: Text(city.nameAr, style: AppTextStyles.body(size: 14)),
-            trailing: city.aladhanName == state.selectedCity.aladhanName
-                ? const Icon(Icons.check, color: AppColors.unlock)
-                : null,
-            onTap: () => Navigator.pop(sheetContext, city),
-          )).toList(),
+          children: [
+            for (final city in moroccanCities)
+              ListTile(
+                title: Text(city.nameAr, style: AppTextStyles.body(size: 14)),
+                trailing: city.aladhanName == state.selectedCity.aladhanName
+                    ? const Icon(Icons.check, color: AppColors.unlock)
+                    : null,
+                onTap: () => Navigator.pop(sheetContext, city),
+              ),
+          ],
         ),
       ),
     );
