@@ -19,22 +19,18 @@ android {
         ]
     }
 
-    // Production signing is supplied by CI/secret infrastructure only.
-    // Local and ordinary verification builds continue using the generated
-    // Android debug key so no signing secret is committed to the repository.
+    // Verification/release builds use the standard Android debug key unless
+    // a real production keystore is explicitly supplied by CI.
     signingConfigs {
         release {
             def releaseKeystore = System.getenv('KADD_RELEASE_KEYSTORE')
-            if (releaseKeystore) {
+            if (releaseKeystore && file(releaseKeystore).exists()) {
                 storeFile file(releaseKeystore)
                 storePassword System.getenv('KADD_RELEASE_STORE_PASSWORD') ?: ''
                 keyAlias System.getenv('KADD_RELEASE_KEY_ALIAS') ?: ''
                 keyPassword System.getenv('KADD_RELEASE_KEY_PASSWORD') ?: ''
             } else {
-                storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')
-                storePassword 'android'
-                keyAlias 'AndroidDebugKey'
-                keyPassword 'android'
+                signingConfig signingConfigs.debug
             }
         }
     }
