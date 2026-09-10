@@ -142,16 +142,12 @@ class AppState extends ChangeNotifier {
         } catch (e) {
           lastError = e;
         }
-        if (attempt < 2) {
-          await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
-        }
+        if (attempt < 2) await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
       }
       _appInfoCache
         ..clear()
         ..addEntries(availableApps.map((info) => MapEntry(info.packageName, info)));
-      if (availableApps.isEmpty && lastError != null) {
-        debugPrint('Kadd: app discovery failed after retries: $lastError');
-      }
+      if (availableApps.isEmpty && lastError != null) debugPrint('Kadd: app discovery failed after retries: $lastError');
       debugPrint('Kadd: Flutter received ${availableApps.length} available apps');
     } finally {
       loadingAvailableApps = false;
@@ -163,11 +159,7 @@ class AppState extends ChangeNotifier {
   Uint8List? iconFor(String packageName) => _appInfoCache[packageName]?.icon;
 
   Future<void> _syncLockedPackages() async {
-    final validPackages = apps
-        .where((a) => a.isEnabled && a.packageName.trim().isNotEmpty)
-        .map((a) => a.packageName.trim())
-        .toSet()
-        .toList();
+    final validPackages = apps.where((a) => a.isEnabled && a.packageName.trim().isNotEmpty).map((a) => a.packageName.trim()).toSet().toList();
     await _usageService.syncLockedPackages(validPackages);
   }
 
@@ -227,11 +219,8 @@ class AppState extends ChangeNotifier {
 
     final weekKey = _weekKey(DateTime.now());
     if (prefs.getString('repsWeekKey') != weekKey) repsThisWeek = 0;
-
     final todayKey = _dayKey(DateTime.now());
-    minutesEarnedToday = prefs.getString('statsDayKey') == todayKey
-        ? (prefs.getInt('minutesEarnedToday') ?? 0)
-        : 0;
+    minutesEarnedToday = prefs.getString('statsDayKey') == todayKey ? (prefs.getInt('minutesEarnedToday') ?? 0) : 0;
 
     _activityDates
       ..clear()
@@ -246,9 +235,7 @@ class AppState extends ChangeNotifier {
         if (decoded is Map) {
           _appUsage
             ..clear()
-            ..addEntries(decoded.entries.where((e) => e.key is String && e.value is Map).map(
-                  (e) => MapEntry(e.key as String, AppUsageSummary.fromJson(Map<String, dynamic>.from(e.value as Map))),
-                ));
+            ..addEntries(decoded.entries.where((e) => e.key is String && e.value is Map).map((e) => MapEntry(e.key as String, AppUsageSummary.fromJson(Map<String, dynamic>.from(e.value as Map)))));
         }
       } catch (e) {
         debugPrint('Failed to decode app usage history: $e');
@@ -256,33 +243,20 @@ class AppState extends ChangeNotifier {
     }
 
     final cityName = prefs.getString('selectedCity');
-    if (cityName != null) {
-      selectedCity = moroccanCities.firstWhere(
-        (c) => c.aladhanName == cityName,
-        orElse: () => moroccanCities.first,
-      );
-    }
+    if (cityName != null) selectedCity = moroccanCities.firstWhere((c) => c.aladhanName == cityName, orElse: () => moroccanCities.first);
 
     final appsJson = prefs.getString('lockedApps');
     if (appsJson != null) {
       try {
         final decoded = jsonDecode(appsJson) as List;
-        apps = decoded
-            .whereType<Map>()
-            .map((j) => LockedApp.fromJson(Map<String, dynamic>.from(j)))
-            .where((a) => a.packageName.trim().isNotEmpty)
-            .toList();
+        apps = decoded.whereType<Map>().map((j) => LockedApp.fromJson(Map<String, dynamic>.from(j))).where((a) => a.packageName.trim().isNotEmpty).toList();
       } catch (e) {
         debugPrint('Failed to decode saved locked apps: $e');
       }
     }
 
     final enabledPrayerNames = prefs.getStringList('enabledPrayerNames');
-    if (enabledPrayerNames != null) {
-      for (final p in prayers) {
-        p.enabled = enabledPrayerNames.contains(p.name.name);
-      }
-    }
+    if (enabledPrayerNames != null) for (final p in prayers) p.enabled = enabledPrayerNames.contains(p.name.name);
   }
 
   Future<void> _persistApps() async {
@@ -302,6 +276,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> resetAllData() async {
+    await _usageService.clearAllLockState();
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     apps = [];
@@ -333,11 +308,7 @@ class AppState extends ChangeNotifier {
     try {
       final result = await _prayerTimesService.fetchTodayTimings(selectedCity);
       for (final p in prayers) p.timeToday = result.timings[p.name.aladhanKey];
-      await _usageService.scheduleAthanLocks(
-        prayers.where((p) => p.enabled && p.timeToday != null).toList(),
-        delayMinutesAfterAthan,
-        cityName: selectedCity.aladhanName,
-      );
+      await _usageService.scheduleAthanLocks(prayers.where((p) => p.enabled && p.timeToday != null).toList(), delayMinutesAfterAthan, cityName: selectedCity.aladhanName);
       notifyListeners();
     } catch (e) {
       debugPrint('Prayer time fetch failed: $e');
@@ -382,17 +353,12 @@ class AppState extends ChangeNotifier {
   Future<void> onRepsVerified(LockedApp app) async {
     final reps = app.repsFor(difficulty);
     await _usageService.grantTemporaryUnlock(app.packageName, app.minutesGranted);
-
     repsThisWeek += reps;
     minutesEarnedToday += app.minutesGranted;
     totalReps += reps;
     totalMinutesEarned += app.minutesGranted;
     final summary = _appUsage.putIfAbsent(app.packageName, () => AppUsageSummary());
-    summary
-      ..reps += reps
-      ..minutes += app.minutesGranted
-      ..unlocks += 1
-      ..lastUnlockDate = _dayKey(DateTime.now());
+    summary..reps += reps..minutes += app.minutesGranted..unlocks += 1..lastUnlockDate = _dayKey(DateTime.now());
     _recordActivityToday();
     notifyListeners();
     await _persistStats();
@@ -417,7 +383,6 @@ class AppState extends ChangeNotifier {
     final todayKey = _dayKey(today);
     final days = List<bool>.generate(7, (index) => _activityDates.contains(_dayKey(today.subtract(Duration(days: index)))));
     last7Days..clear()..addAll(days.reversed);
-
     var streak = 0;
     for (var i = 0; i < 91; i++) {
       if (!_activityDates.contains(_dayKey(today.subtract(Duration(days: i))))) break;
@@ -427,34 +392,31 @@ class AppState extends ChangeNotifier {
   }
 
   String _dayKey(DateTime date) => '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-
   String _weekKey(DateTime date) {
     final monday = date.subtract(Duration(days: date.weekday - DateTime.monday));
     return _dayKey(monday);
   }
-
-  bool _isValidDayKey(String value) => RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
-
+  bool _isValidDayKey(String value) {
+    final parsed = DateTime.tryParse(value);
+    return parsed != null && _dayKey(parsed) == value;
+  }
   void _pruneActivityDates() {
     final cutoff = DateTime.now().subtract(const Duration(days: 90));
-    _activityDates.removeWhere((value) {
-      final parts = value.split('-').map(int.parse).toList();
-      final date = DateTime(parts[0], parts[1], parts[2]);
-      return date.isBefore(DateTime(cutoff.year, cutoff.month, cutoff.day));
+    _activityDates.removeWhere((key) {
+      final date = DateTime.tryParse(key);
+      return date == null || date.isBefore(DateTime(cutoff.year, cutoff.month, cutoff.day));
     });
   }
-
   Future<void> _persistStats() async {
     final prefs = await SharedPreferences.getInstance();
-    _pruneActivityDates();
+    final todayKey = _dayKey(DateTime.now());
     await prefs.setInt('repsThisWeek', repsThisWeek);
     await prefs.setString('repsWeekKey', _weekKey(DateTime.now()));
     await prefs.setInt('minutesEarnedToday', minutesEarnedToday);
-    await prefs.setInt('streakDays', streakDays);
+    await prefs.setString('statsDayKey', todayKey);
     await prefs.setInt('totalReps', totalReps);
     await prefs.setInt('totalMinutesEarned', totalMinutesEarned);
     await prefs.setInt('prayerUnlocks', prayerUnlocks);
-    await prefs.setString('statsDayKey', _dayKey(DateTime.now()));
     await prefs.setStringList('activityDates', _activityDates.toList()..sort());
     await prefs.setString('appUsageHistory', jsonEncode(_appUsage.map((key, value) => MapEntry(key, value.toJson()))));
   }
