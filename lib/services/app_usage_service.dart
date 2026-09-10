@@ -40,6 +40,8 @@ class AppUsageService {
     await _channel.invokeMethod('syncLockedPackages', {'packages': packages});
   }
 
+  Future<void> clearAllLockState() => _channel.invokeMethod('clearAllLockState');
+
   Future<void> grantTemporaryUnlock(String packageName, int minutes) async {
     await _channel.invokeMethod('grantTemporaryUnlock', {
       'packageName': packageName,
