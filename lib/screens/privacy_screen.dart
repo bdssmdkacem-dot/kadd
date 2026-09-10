@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../theme.dart';
 import '../widgets/kadd_background.dart';
 import '../widgets/kadd_card.dart';
@@ -77,7 +78,22 @@ class PrivacyScreen extends StatelessWidget {
                       FilledButton.icon(
                         onPressed: () async {
                           try {
-                            await AdsPrivacyController.showPrivacyOptions();
+                            final status = await ConsentInformation.instance.getPrivacyOptionsRequirementStatus();
+                            if (status != PrivacyOptionsRequirementStatus.required) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('لا توجد خيارات خصوصية للإعلانات مطلوبة حاليًا في منطقتك')),
+                                );
+                              }
+                              return;
+                            }
+                            ConsentForm.showPrivacyOptionsForm((FormError? error) {
+                              if (error != null && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('تعذر فتح إعدادات الإعلانات: ${error.message}')),
+                                );
+                              }
+                            });
                           } catch (_) {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -100,18 +116,5 @@ class PrivacyScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class AdsPrivacyController {
-  AdsPrivacyController._();
-
-  static Future<void> showPrivacyOptions() async {
-    await _show();
-  }
-
-  static Future<void> _show() async {
-    // Kept in a small adapter so the screen has no dependency on the SDK API.
-    await Future<void>.value();
   }
 }
