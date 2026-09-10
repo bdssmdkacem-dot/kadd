@@ -27,6 +27,7 @@ object AthanAlarmScheduler {
     private const val METHOD = 21
     private const val TIME_ZONE = "Africa/Casablanca"
     private const val REFRESH_REQUEST_CODE = 0x4B414444
+    private val VALID_PRAYERS = setOf("fajr", "dhuhr", "asr", "maghrib", "isha")
 
     fun schedule(
         context: Context,
@@ -35,10 +36,11 @@ object AthanAlarmScheduler {
         cityName: String? = null,
         enabledPrayerNames: List<String> = prayers.mapNotNull { it["name"] as? String },
     ) {
+        val enabled = normalizeEnabled(enabledPrayerNames)
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit()
             .putString(KEY_CITY, cityName?.trim().orEmpty())
-            .putStringSet(KEY_ENABLED, enabledPrayerNames.map(String::trim).filter(String::isNotEmpty).toSet())
+            .putStringSet(KEY_ENABLED, enabled)
             .putInt(KEY_DELAY, delayMinutes.coerceIn(0, 60))
             .apply()
 
@@ -47,9 +49,9 @@ object AthanAlarmScheduler {
         val now = System.currentTimeMillis()
         val persisted = mutableListOf<String>()
         prayers.forEach { prayer ->
-            val name = (prayer["name"] as? String)?.trim().orEmpty()
+            val name = normalizePrayer((prayer["name"] as? String).orEmpty())
             val epochMillis = (prayer["epochMillis"] as? Number)?.toLong() ?: return@forEach
-            if (name.isEmpty()) return@forEach
+            if (name !in enabled || name !in VALID_PRAYERS) return@forEach
             val triggerAt = epochMillis + TimeUnit.MINUTES.toMillis(delayMinutes.coerceIn(0, 60).toLong())
             if (triggerAt <= now) return@forEach
             if (scheduleOne(context, alarmManager, name, triggerAt)) persisted += entry(name, triggerAt)
@@ -61,9 +63,11 @@ object AthanAlarmScheduler {
     fun restore(context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val now = System.currentTimeMillis()
+        val enabled = loadEnabled(context)
         val remaining = mutableListOf<String>()
         load(context).forEach { rawEntry ->
             val parsed = parseEntry(rawEntry) ?: return@forEach
+            if (parsed.name !in enabled || parsed.name !in VALID_PRAYERS) return@forEach
             if (parsed.triggerAt > now && scheduleOne(context, alarmManager, parsed.name, parsed.triggerAt)) {
                 remaining += entry(parsed.name, parsed.triggerAt)
             }
@@ -79,14 +83,17 @@ object AthanAlarmScheduler {
     private fun parseEntry(raw: String): AlarmEntry? {
         val separator = raw.lastIndexOf(SEPARATOR)
         if (separator <= 0 || separator >= raw.lastIndex) return null
-        val name = raw.substring(0, separator).trim()
+        val name = normalizePrayer(raw.substring(0, separator))
         val triggerAt = raw.substring(separator + 1).toLongOrNull() ?: return null
-        return if (name.isEmpty()) null else AlarmEntry(name, triggerAt)
+        return if (name in VALID_PRAYERS && triggerAt > 0L) AlarmEntry(name, triggerAt) else null
     }
 
     private fun scheduleOne(context: Context, alarmManager: AlarmManager, name: String, triggerAt: Long): Boolean {
-        if (!canScheduleExact(alarmManager)) return false
-        val intent = Intent(context, AthanLockReceiver::class.java).apply { putExtra("prayerName", name) }
+        if (!canScheduleExact(alarmManager) || name !in VALID_PRAYERS) return false
+        val intent = Intent(context, AthanLockReceiver::class.java).apply {
+            putExtra("prayerName", name)
+            putExtra("triggerAt", triggerAt)
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             stableRequestCode(name, triggerAt),
@@ -127,7 +134,6 @@ object AthanAlarmScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             alarmManager.cancel(pendingIntent)
-            // Cancel alarms created by the previous request-code scheme as well.
             val legacyIntent = PendingIntent.getBroadcast(
                 context,
                 parsed.name.lowercase(Locale.US).hashCode(),
@@ -148,11 +154,20 @@ object AthanAlarmScheduler {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getStringSet(KEY_ALARMS, emptySet())?.toSet() ?: emptySet()
 
+    private fun loadEnabled(context: Context): Set<String> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(KEY_ENABLED, emptySet())?.map { normalizePrayer(it) }
+            ?.filter(VALID_PRAYERS::contains)?.toSet() ?: emptySet()
+
+    private fun normalizePrayer(name: String): String = name.trim().lowercase(Locale.US)
+
+    private fun normalizeEnabled(names: List<String>): Set<String> =
+        names.map(::normalizePrayer).filter(VALID_PRAYERS::contains).toSet()
+
     private fun save(context: Context, entries: Collection<String>) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putStringSet(KEY_ALARMS, entries.toSet()).apply()
 
-    /** Adds a future day's alarms without cancelling alarms already scheduled for today. */
     private fun appendFutureAlarms(
         context: Context,
         prayers: List<Map<String, Any>>,
@@ -160,14 +175,15 @@ object AthanAlarmScheduler {
     ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val now = System.currentTimeMillis()
+        val enabled = loadEnabled(context)
         val merged = load(context).mapNotNull { raw ->
-            parseEntry(raw)?.takeIf { it.triggerAt > now }
+            parseEntry(raw)?.takeIf { it.triggerAt > now && it.name in enabled }
         }.toMutableList()
 
         prayers.forEach { prayer ->
-            val name = (prayer["name"] as? String)?.trim().orEmpty()
+            val name = normalizePrayer((prayer["name"] as? String).orEmpty())
             val epochMillis = (prayer["epochMillis"] as? Number)?.toLong() ?: return@forEach
-            if (name.isEmpty()) return@forEach
+            if (name !in enabled || name !in VALID_PRAYERS) return@forEach
             val triggerAt = epochMillis + TimeUnit.MINUTES.toMillis(delayMinutes.coerceIn(0, 60).toLong())
             if (triggerAt <= now) return@forEach
             if (scheduleOne(context, alarmManager, name, triggerAt)) {
@@ -222,7 +238,7 @@ object AthanAlarmScheduler {
     private fun fetchTomorrowAndSchedule(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val city = prefs.getString(KEY_CITY, "").orEmpty()
-        val enabled = prefs.getStringSet(KEY_ENABLED, emptySet()) ?: emptySet()
+        val enabled = loadEnabled(context)
         val delay = prefs.getInt(KEY_DELAY, 5).coerceIn(0, 60)
         if (city.isBlank() || enabled.isEmpty()) {
             scheduleRefresh(context, context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
@@ -235,11 +251,10 @@ object AthanAlarmScheduler {
         else scheduleRefresh(context, context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
     }
 
-    /** Rebuilds today's and tomorrow's prayer alarms after reboot/date/time/timezone changes. */
     fun refreshTodayAndTomorrow(context: Context) = Thread {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val city = prefs.getString(KEY_CITY, "").orEmpty()
-        val enabled = prefs.getStringSet(KEY_ENABLED, emptySet()) ?: emptySet()
+        val enabled = loadEnabled(context)
         val delay = prefs.getInt(KEY_DELAY, 5).coerceIn(0, 60)
         if (city.isBlank() || enabled.isEmpty()) return@Thread
 
@@ -258,7 +273,18 @@ object AthanAlarmScheduler {
 
 class AthanLockReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val prayerName = intent.getStringExtra("prayerName") ?: "dhuhr"
+        val prayerName = intent.getStringExtra("prayerName")?.trim()?.lowercase(Locale.US).orEmpty()
+        val triggerAt = intent.getLongExtra("triggerAt", 0L)
+        val prefs = context.getSharedPreferences("kadd_prayer_alarms", Context.MODE_PRIVATE)
+        val enabled = prefs.getStringSet("enabled_prayers", emptySet())
+            ?.map { it.trim().lowercase(Locale.US) }?.toSet().orEmpty()
+        val valid = setOf("fajr", "dhuhr", "asr", "maghrib", "isha")
+        if (prayerName !in valid || prayerName !in enabled) return
+        if (triggerAt > 0L) {
+            val expected = "$prayerName|$triggerAt"
+            val scheduled = prefs.getStringSet("alarms", emptySet())?.contains(expected) == true
+            if (!scheduled) return
+        }
         LockPrefs.activateAthanLock(context, prayerName)
         LockForegroundService.ensureRunning(context)
     }
