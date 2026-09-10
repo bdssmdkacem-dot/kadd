@@ -5,6 +5,8 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 
 /**
  * Full-screen verification activity launched by the native lock service.
@@ -12,6 +14,8 @@ import io.flutter.embedding.android.FlutterActivity
  * become an alternate path around the verification requirement.
  */
 class LockActivity : FlutterActivity() {
+    private val channelName = "com.comptaflow.kadd/lock"
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -23,6 +27,19 @@ class LockActivity : FlutterActivity() {
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
+        }
+    }
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "finishLockActivity" -> {
+                    result.success(null)
+                    finishAndRemoveTask()
+                }
+                else -> result.notImplemented()
+            }
         }
     }
 
