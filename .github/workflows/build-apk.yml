@@ -102,20 +102,42 @@ jobs:
       - name: Build release APK
         env:
           KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
+          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
+          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
           KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
           KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
           KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
           KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
-        run: flutter build apk --release
+        shell: bash
+        run: |
+          dart_defines=()
+          if [ -n "$KADD_ADMOB_BANNER_ID" ]; then
+            dart_defines+=("--dart-define=KADD_ADMOB_BANNER_ID=$KADD_ADMOB_BANNER_ID")
+          fi
+          if [ -n "$KADD_ADMOB_INTERSTITIAL_ID" ]; then
+            dart_defines+=("--dart-define=KADD_ADMOB_INTERSTITIAL_ID=$KADD_ADMOB_INTERSTITIAL_ID")
+          fi
+          flutter build apk --release "${dart_defines[@]}"
 
       - name: Build release AAB
         env:
           KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
+          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
+          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
           KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
           KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
           KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
           KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
-        run: flutter build appbundle --release
+        shell: bash
+        run: |
+          dart_defines=()
+          if [ -n "$KADD_ADMOB_BANNER_ID" ]; then
+            dart_defines+=("--dart-define=KADD_ADMOB_BANNER_ID=$KADD_ADMOB_BANNER_ID")
+          fi
+          if [ -n "$KADD_ADMOB_INTERSTITIAL_ID" ]; then
+            dart_defines+=("--dart-define=KADD_ADMOB_INTERSTITIAL_ID=$KADD_ADMOB_INTERSTITIAL_ID")
+          fi
+          flutter build appbundle --release "${dart_defines[@]}"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
