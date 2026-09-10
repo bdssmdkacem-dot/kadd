@@ -55,10 +55,22 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "grantTemporaryUnlock" -> {
-                    val packageName = call.argument<String>("packageName")
+                    val packageName = call.argument<String>("packageName")?.trim()
                     val minutes = call.argument<Int>("minutes")
-                    if (packageName.isNullOrBlank() || minutes == null || minutes <= 0) result.error("INVALID_UNLOCK", "packageName and positive minutes are required", null)
-                    else { LockPrefs.grantUnlockUntil(this, packageName, minutes); result.success(null) }
+                    when {
+                        packageName.isNullOrEmpty() || minutes == null || minutes <= 0 -> {
+                            result.error("INVALID_UNLOCK", "packageName and positive minutes are required", null)
+                        }
+                        LockPrefs.isAthanLockActive(this) -> {
+                            // Never queue an exercise unlock behind a prayer lock.
+                            // Otherwise it could become effective after the prayer lock ends.
+                            result.error("PRAYER_LOCK_ACTIVE", "Exercise unlock is unavailable during the active prayer lock", null)
+                        }
+                        else -> {
+                            LockPrefs.grantUnlockUntil(this, packageName, minutes)
+                            result.success(null)
+                        }
+                    }
                 }
                 "grantAthanUnlock" -> {
                     val requestedPrayer = call.argument<String>("prayer")?.trim()
