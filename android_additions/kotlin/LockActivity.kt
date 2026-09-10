@@ -7,11 +7,9 @@ import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 
 /**
- * A separate FlutterActivity that boots straight into the RepCameraScreen
- * or PrayerLockScreen route (never RootNav) via Flutter's initial-route
- * mechanism — see lib/main.dart's onGenerateRoute for the Dart side of this
- * contract. LockForegroundService starts this Activity full-screen the
- * moment a locked, unverified package is foregrounded.
+ * Full-screen verification activity launched by the native lock service.
+ * Back navigation is deliberately disabled: leaving this activity must not
+ * become an alternate path around the verification requirement.
  */
 class LockActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,10 +33,10 @@ class LockActivity : FlutterActivity() {
         recreate()
     }
 
-    /** Never allow the Android back action to dismiss the enforcement screen. */
+    /** Do not allow Android Back to dismiss an active verification screen. */
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        // Unlock must happen through the configured exercise or prayer flow.
+        // Verification must succeed before the user can leave this screen.
     }
 
     override fun getInitialRoute(): String {
