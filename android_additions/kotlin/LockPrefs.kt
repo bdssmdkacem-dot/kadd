@@ -75,6 +75,11 @@ object LockPrefs {
         clearAthanLock(context)
     }
 
+    /** Clears every persisted native lock/unlock flag during a full app reset. */
+    fun clearAllLockState(context: Context) {
+        prefs(context).edit().clear().apply()
+    }
+
     private fun clearAthanLock(context: Context) {
         prefs(context).edit()
             .putBoolean(KEY_ATHAN_LOCK_ACTIVE, false)
