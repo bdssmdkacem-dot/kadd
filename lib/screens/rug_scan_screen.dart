@@ -33,11 +33,16 @@ class _RugScanScreenState extends State<RugScanScreen> {
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
-    _initializeCamera();
+    _initializeCameraAndClassifier();
   }
 
-  Future<void> _initializeCamera() async {
+  Future<void> _initializeCameraAndClassifier() async {
     try {
+      await _classifier.load();
+      if (!_classifier.isLoaded) {
+        throw StateError('تعذر تحميل نموذج التحقق على الجهاز');
+      }
+
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         throw StateError('لا توجد كاميرا متاحة على الجهاز');
@@ -65,14 +70,14 @@ class _RugScanScreenState extends State<RugScanScreen> {
       if (!mounted) return;
       setState(() {
         _initializing = false;
-        _error = 'تعذر تشغيل الكاميرا: $error';
+        _error = 'تعذر تشغيل التحقق: $error';
       });
     }
   }
 
   Future<void> _captureStep() async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || _capturing || _verifying) {
+    if (controller == null || !controller.value.isInitialized || !_classifier.isLoaded || _capturing || _verifying) {
       return;
     }
 
