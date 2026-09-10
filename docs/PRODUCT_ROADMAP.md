@@ -16,7 +16,7 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 - [x] Prayer-city selection and AlAdhan prayer-time integration.
 - [x] Prayer-time lock scheduling with AlarmManager.
 - [x] Persistent next-prayer alarms restored after reboot/app update.
-- [x] Prayer-rug verification pipeline using on-device image labeling.
+- [x] Prayer-rug verification flow with multi-capture, retry, and fail-closed policy.
 - [x] Local persistence with SharedPreferences.
 - [x] AdMob integration with consent flow.
 - [x] GitHub Actions release APK build.
@@ -42,9 +42,9 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 - [x] Defensive persistence and validation of per-app configuration.
 - [x] Independent initialization of app discovery and prayer refresh so network failure does not block the app.
 - [x] Reliable exercise session state: current reps, target, lost-tracking recovery, camera failure/retry, completion, and duplicate-completion protection.
-- [x] Prayer setup: city, enabled prayers, delay, next prayer status, and active-lock state.
-- [x] Prayer verification flow with camera guidance and failure/retry handling.
-- [x] Statistics: daily, weekly, streak, total repetitions, earned minutes, and per-app history.
+- [x] Prayer setup: city, enabled prayers, delay, next prayer status, exact-alarm permission state, and active-lock state.
+- [ ] Production-grade prayer-rug verification using a validated dedicated model or stronger verification design.
+- [x] Statistics: daily, weekly, streak, total repetitions, earned minutes, prayer unlocks, and per-app history.
 - [x] Settings: reset data, diagnostics, privacy information, permissions, and ads/privacy controls.
 
 ## Phase 3 — Reliability & security
