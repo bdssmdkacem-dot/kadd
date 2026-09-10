@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/city.dart';
@@ -358,15 +357,21 @@ class AppState extends ChangeNotifier {
     totalReps += reps;
     totalMinutesEarned += app.minutesGranted;
     final summary = _appUsage.putIfAbsent(app.packageName, () => AppUsageSummary());
-    summary..reps += reps..minutes += app.minutesGranted..unlocks += 1..lastUnlockDate = _dayKey(DateTime.now());
+    summary
+      ..reps += reps
+      ..minutes += app.minutesGranted
+      ..unlocks += 1
+      ..lastUnlockDate = _dayKey(DateTime.now());
     _recordActivityToday();
     notifyListeners();
     await _persistStats();
     AdsService.instance.maybeShowInterstitialAfterUnlock();
   }
 
-  Future<void> onRugVerified() async {
-    await _usageService.grantAthanUnlock();
+  /// Grants the prayer unlock only when the native side confirms that the
+  /// exact prayer being verified is still the active prayer lock.
+  Future<void> onRugVerified(PrayerName prayer) async {
+    await _usageService.grantAthanUnlock(prayer);
     prayerUnlocks += 1;
     _recordActivityToday();
     notifyListeners();
@@ -382,7 +387,9 @@ class AppState extends ChangeNotifier {
     final today = DateTime.now();
     final todayKey = _dayKey(today);
     final days = List<bool>.generate(7, (index) => _activityDates.contains(_dayKey(today.subtract(Duration(days: index)))));
-    last7Days..clear()..addAll(days.reversed);
+    last7Days
+      ..clear()
+      ..addAll(days.reversed);
     var streak = 0;
     for (var i = 0; i < 91; i++) {
       if (!_activityDates.contains(_dayKey(today.subtract(Duration(days: i))))) break;
@@ -392,14 +399,17 @@ class AppState extends ChangeNotifier {
   }
 
   String _dayKey(DateTime date) => '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
   String _weekKey(DateTime date) {
     final monday = date.subtract(Duration(days: date.weekday - DateTime.monday));
     return _dayKey(monday);
   }
+
   bool _isValidDayKey(String value) {
     final parsed = DateTime.tryParse(value);
     return parsed != null && _dayKey(parsed) == value;
   }
+
   void _pruneActivityDates() {
     final cutoff = DateTime.now().subtract(const Duration(days: 90));
     _activityDates.removeWhere((key) {
@@ -407,6 +417,7 @@ class AppState extends ChangeNotifier {
       return date == null || date.isBefore(DateTime(cutoff.year, cutoff.month, cutoff.day));
     });
   }
+
   Future<void> _persistStats() async {
     final prefs = await SharedPreferences.getInstance();
     final todayKey = _dayKey(DateTime.now());
