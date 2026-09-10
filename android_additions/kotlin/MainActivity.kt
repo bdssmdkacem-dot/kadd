@@ -85,6 +85,8 @@ class MainActivity : FlutterActivity() {
         var launcherCount = 0
         var installedCount = 0
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+
+        // Primary: normal launcher resolution.
         try {
             val launcherActivities = packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
             launcherCount = launcherActivities.size
@@ -93,25 +95,40 @@ class MainActivity : FlutterActivity() {
                 if (appInfo.packageName != ownPackage && isInstalled(appInfo)) addApp(byPackage, appInfo)
             }
         } catch (e: Exception) { android.util.Log.w("Kadd", "Launcher query failed", e) }
+
+        // Secondary: package-scoped launcher resolution. This is intentionally
+        // independent of getLaunchIntentForPackage(), which can return null on
+        // OEM builds even when the package exposes a launcher activity.
         try {
             @Suppress("DEPRECATION")
-            val packages = packageManager.getInstalledPackages(PackageManager.GET_ACTIVITIES or PackageManager.MATCH_ALL)
-            installedCount = packages.size
-            packages.forEach { pkg ->
-                val appInfo = pkg.applicationInfo ?: return@forEach
-                if (appInfo.packageName == ownPackage || !isInstalled(appInfo)) return@forEach
-                val hasLauncherActivity = pkg.activities.orEmpty().any { activity -> activity.enabled && activity.exported && activity.intentFilters?.any { filter -> filter.hasAction(Intent.ACTION_MAIN) && filter.hasCategory(Intent.CATEGORY_LAUNCHER) } == true }
-                if (hasLauncherActivity) addApp(byPackage, appInfo)
+            val installed = packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
+            installedCount = installed.size
+            installed.forEach { appInfo ->
+                if (appInfo.packageName == ownPackage || !isInstalled(appInfo) || byPackage.containsKey(appInfo.packageName)) return@forEach
+                try {
+                    val scopedIntent = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_LAUNCHER)
+                        setPackage(appInfo.packageName)
+                    }
+                    val matches = packageManager.queryIntentActivities(scopedIntent, PackageManager.MATCH_ALL)
+                    if (matches.isNotEmpty()) addApp(byPackage, appInfo)
+                } catch (_: Exception) { }
             }
-        } catch (e: Exception) { android.util.Log.w("Kadd", "Installed-package activity query failed", e) }
+        } catch (e: Exception) { android.util.Log.w("Kadd", "Installed application fallback failed", e) }
+
+        // Last fallback: getLaunchIntentForPackage for older/OEM PackageManager
+        // implementations where package-scoped query is unavailable.
         if (byPackage.isEmpty()) {
             try {
                 @Suppress("DEPRECATION")
                 val installed = packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
                 installedCount = maxOf(installedCount, installed.size)
-                installed.forEach { appInfo -> if (appInfo.packageName != ownPackage && isInstalled(appInfo) && isLaunchablePackage(appInfo.packageName)) addApp(byPackage, appInfo) }
-            } catch (e: Exception) { android.util.Log.w("Kadd", "Application fallback query failed", e) }
+                installed.forEach { appInfo ->
+                    if (appInfo.packageName != ownPackage && isInstalled(appInfo) && isLaunchablePackage(appInfo.packageName)) addApp(byPackage, appInfo)
+                }
+            } catch (e: Exception) { android.util.Log.w("Kadd", "Legacy application fallback failed", e) }
         }
+
         val apps = byPackage.values.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
         return Pair(apps, mapOf("launcherCount" to launcherCount, "installedCount" to installedCount, "launchableCount" to apps.size))
     }
