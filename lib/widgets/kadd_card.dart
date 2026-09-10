@@ -30,7 +30,10 @@ class KaddCard extends StatelessWidget {
         border: Border.all(color: borderColor ?? AppColors.line),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: child,
+      child: Material(
+        type: MaterialType.transparency,
+        child: child,
+      ),
     );
 
     if (onTap == null) return card;
