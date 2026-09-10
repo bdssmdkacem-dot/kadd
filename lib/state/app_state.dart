@@ -146,6 +146,22 @@ class AppState extends ChangeNotifier {
       _appInfoCache
         ..clear()
         ..addEntries(availableApps.map((info) => MapEntry(info.packageName, info)));
+
+      // Reconcile Flutter's persisted configuration with Android's current
+      // launchable-app inventory, but only after a successful non-empty
+      // discovery. An empty result must never erase configuration after a
+      // transient OEM/package-manager failure.
+      if (availableApps.isNotEmpty) {
+        final installedPackages = availableApps.map((a) => a.packageName).toSet();
+        final before = apps.length;
+        apps.removeWhere((app) => app.packageName.trim().isEmpty || !installedPackages.contains(app.packageName));
+        if (apps.length != before) {
+          await _persistApps();
+          await _syncLockedPackages();
+          notifyListeners();
+        }
+      }
+
       if (availableApps.isEmpty && lastError != null) debugPrint('Kadd: app discovery failed after retries: $lastError');
       debugPrint('Kadd: Flutter received ${availableApps.length} available apps');
     } finally {
