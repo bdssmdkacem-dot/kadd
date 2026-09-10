@@ -37,16 +37,16 @@ void main() {
     expect(find.text('الإحصائيات'), findsOneWidget);
     expect(navigationBar.selectedIndex, 0);
 
-    await tester.tap(find.byIcon(Icons.mosque_outlined));
+    await tester.tap(find.text('الصلاة'));
     await tester.pumpAndSettle();
 
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
       2,
     );
-    expect(find.text('أي صلاة تريد الالتزام بها؟'), findsOneWidget);
+    expect(find.text('إعدادات الصلاة'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.lock_outline));
+    await tester.tap(find.text('الرئيسية'));
     await tester.pumpAndSettle();
 
     expect(
