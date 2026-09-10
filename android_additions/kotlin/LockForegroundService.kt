@@ -56,6 +56,8 @@ class LockForegroundService : Service() {
             return
         }
 
+        LockPrefs.pruneExpiredUnlocks(this)
+
         val persisted = LockPrefs.getLockedPackages(this)
         if (persisted.isEmpty()) {
             stopSelf()
