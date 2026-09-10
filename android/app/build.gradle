@@ -30,7 +30,12 @@ android {
                 keyAlias System.getenv('KADD_RELEASE_KEY_ALIAS') ?: ''
                 keyPassword System.getenv('KADD_RELEASE_KEY_PASSWORD') ?: ''
             } else {
-                signingConfig signingConfigs.debug
+                // A SigningConfig cannot reference signingConfig(); copy the
+                // debug signing values explicitly for local/verification builds.
+                storeFile signingConfigs.debug.storeFile
+                storePassword signingConfigs.debug.storePassword
+                keyAlias signingConfigs.debug.keyAlias
+                keyPassword signingConfigs.debug.keyPassword
             }
         }
     }
