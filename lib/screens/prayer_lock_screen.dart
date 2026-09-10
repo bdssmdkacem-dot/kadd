@@ -8,8 +8,7 @@ import '../widgets/kadd_background.dart';
 import '../widgets/kadd_card.dart';
 import 'rug_scan_screen.dart';
 
-/// Shown (via a full-screen native Activity, see android_additions/) when a
-/// locked app is foregrounded during an active post-Athan lock window.
+/// Shown (via a full-screen native Activity) while a prayer lock is active.
 class PrayerLockScreen extends StatelessWidget {
   final PrayerName prayer;
   const PrayerLockScreen({super.key, required this.prayer});
@@ -32,14 +31,19 @@ class PrayerLockScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   Text(prayer.emoji, style: const TextStyle(fontSize: 26)),
                   const SizedBox(height: 6),
-                  Text('أذان ${prayer.labelAr}', style: AppTextStyles.kufi(size: 26)),
-                  Text('أُذّن قبل ${state.delayMinutesAfterAthan} دقائق — ${state.selectedCity.nameAr}',
-                      style: AppTextStyles.body(size: 12, color: AppColors.textFaint)),
+                  Text('وقت صلاة ${prayer.labelAr}', style: AppTextStyles.kufi(size: 26)),
+                  Text(
+                    state.delayMinutesAfterAthan == 0
+                        ? 'بدأ القفل مع الأذان — ${state.selectedCity.nameAr}'
+                        : 'يبدأ القفل بعد ${state.delayMinutesAfterAthan} دقائق من الأذان — ${state.selectedCity.nameAr}',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.body(size: 12, color: AppColors.textFaint),
+                  ),
                   const SizedBox(height: 18),
                   const _PulsingLockBadge(),
                   const SizedBox(height: 14),
                   Text(
-                    'تطبيقاتك مقفلة الآن. صوّر سجادة صلاتك لتفتحها.',
+                    'تطبيقاتك مقفلة الآن. صوّر سجادة صلاتك للتحقق وفتحها.',
                     textAlign: TextAlign.center,
                     style: AppTextStyles.body(size: 12.5, color: AppColors.textDim),
                   ),
@@ -65,7 +69,7 @@ class PrayerLockScreen extends StatelessWidget {
                                   children: [
                                     Text(state.displayNameFor(app.packageName),
                                         style: AppTextStyles.body(size: 13.5, weight: FontWeight.w600)),
-                                    Text('مقفل حتى التحقق', style: AppTextStyles.body(size: 11, color: AppColors.textFaint)),
+                                    Text('مقفل حتى إتمام التحقق', style: AppTextStyles.body(size: 11, color: AppColors.textFaint)),
                                   ],
                                 ),
                               ),
@@ -115,7 +119,7 @@ class _PulsingLockBadgeState extends State<_PulsingLockBadge>
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(color: AppColors.signal, width: 2),
-          color: AppColors.signal.withOpacity(0.08),
+          color: AppColors.signal.withValues(alpha: 0.08),
         ),
         child: const Icon(Icons.lock, color: AppColors.signal, size: 30),
       ),
