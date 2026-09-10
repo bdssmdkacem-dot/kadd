@@ -18,7 +18,7 @@ dependencies:
   shared_preferences: ^2.5.5
 
   # Fonts
-google_fonts: ^6.3.3
+  google_fonts: ^6.3.3
 
   # Camera
   camera: ^0.10.6
