@@ -12,7 +12,7 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.android.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.util.Locale
@@ -62,41 +62,23 @@ class MainActivity : FlutterActivity() {
                     val packageName = call.argument<String>("packageName")?.trim()
                     val minutes = call.argument<Int>("minutes")
                     when {
-                        packageName.isNullOrEmpty() || minutes == null || minutes <= 0 || minutes > maxExerciseUnlockMinutes -> {
-                            result.error("INVALID_UNLOCK", "packageName and minutes between 1 and $maxExerciseUnlockMinutes are required", null)
-                        }
-                        !LockPrefs.getLockedPackages(this).contains(packageName) -> {
-                            result.error("APP_NOT_LOCKED", "The requested package is not currently configured as locked", null)
-                        }
-                        !isLaunchablePackage(packageName) -> {
-                            result.error("APP_NOT_AVAILABLE", "The requested app is no longer available on this device", null)
-                        }
-                        LockPrefs.isAthanLockActive(this) -> {
-                            result.error("PRAYER_LOCK_ACTIVE", "Exercise unlock is unavailable during the active prayer lock", null)
-                        }
-                        else -> {
-                            LockPrefs.grantUnlockUntil(this, packageName, minutes)
-                            result.success(null)
-                        }
+                        packageName.isNullOrEmpty() || minutes == null || minutes <= 0 || minutes > maxExerciseUnlockMinutes -> result.error("INVALID_UNLOCK", "packageName and minutes between 1 and $maxExerciseUnlockMinutes are required", null)
+                        !LockPrefs.getLockedPackages(this).contains(packageName) -> result.error("APP_NOT_LOCKED", "The requested package is not currently configured as locked", null)
+                        !isLaunchablePackage(packageName) -> result.error("APP_NOT_AVAILABLE", "The requested app is no longer available on this device", null)
+                        LockPrefs.isAthanLockActive(this) -> result.error("PRAYER_LOCK_ACTIVE", "Exercise unlock is unavailable during the active prayer lock", null)
+                        else -> { LockPrefs.grantUnlockUntil(this, packageName, minutes); result.success(null) }
                     }
                 }
                 "grantAthanUnlock" -> {
                     val requestedPrayer = call.argument<String>("prayer")?.trim()?.lowercase(Locale.US)
                     val activePrayer = LockPrefs.getActivePrayerName(this)?.lowercase(Locale.US)
-                    if (requestedPrayer.isNullOrEmpty() || requestedPrayer !in supportedPrayerNames || activePrayer == null || requestedPrayer != activePrayer) {
-                        result.success(false)
-                    } else {
-                        LockPrefs.grantAthanUnlockForCurrentWindow(this)
-                        result.success(true)
-                    }
+                    if (requestedPrayer.isNullOrEmpty() || requestedPrayer !in supportedPrayerNames || activePrayer == null || requestedPrayer != activePrayer) result.success(false)
+                    else { LockPrefs.grantAthanUnlockForCurrentWindow(this); result.success(true) }
                 }
                 "scheduleAthanLocks" -> {
                     @Suppress("UNCHECKED_CAST")
                     val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
-                    val enabled = (call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String })
-                        .map { it.trim().lowercase(Locale.US) }
-                        .filter { it in supportedPrayerNames }
-                        .distinct()
+                    val enabled = (call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String }).map { it.trim().lowercase(Locale.US) }.filter { it in supportedPrayerNames }.distinct()
                     val safePrayers = prayers.filter { prayer ->
                         val name = (prayer["name"] as? String)?.trim()?.lowercase(Locale.US)
                         val epochMillis = (prayer["epochMillis"] as? Number)?.toLong()
@@ -112,52 +94,93 @@ class MainActivity : FlutterActivity() {
 
     private fun canScheduleExactAlarms(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
-        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        return alarmManager.canScheduleExactAlarms()
+        return (getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
     }
 
-    private fun sanitizeLockedPackages(requested: List<String>): List<String> = requested
-        .asSequence()
-        .map { it.trim() }
-        .filter { it.isNotEmpty() && it != applicationContext.packageName }
-        .filter(::isLaunchablePackage)
-        .distinct()
-        .toList()
+    private fun sanitizeLockedPackages(requested: List<String>): List<String> = requested.asSequence().map { it.trim() }.filter { it.isNotEmpty() && it != applicationContext.packageName }.filter(::isLaunchablePackage).distinct().toList()
 
-    private fun isLaunchablePackage(packageName: String): Boolean = try {
-        packageName.isNotBlank() && packageManager.getLaunchIntentForPackage(packageName) != null
-    } catch (_: Exception) {
-        false
-    }
+    private fun isLaunchablePackage(packageName: String): Boolean = try { packageName.isNotBlank() && packageManager.getLaunchIntentForPackage(packageName) != null } catch (_: Exception) { false }
 
+    /**
+     * Discover user-launchable applications using two independent PackageManager
+     * paths. Some OEM Android builds expose launcher activities differently from
+     * getLaunchIntentForPackage(), so launcher activities are authoritative and
+     * installed package activities are a second fallback.
+     */
     private fun discoverySnapshot(): Pair<List<Map<String, Any?>>, Map<String, Int>> {
         val byPackage = linkedMapOf<String, Map<String, Any?>>()
         val ownPackage = applicationContext.packageName
+        var launcherCount = 0
+
+        // Path 1: resolve MAIN/LAUNCHER activities directly. This avoids relying
+        // on getLaunchIntentForPackage(), which can return null on some OEM ROMs.
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
-        val launcherActivities = packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
-        launcherActivities.forEach { info ->
-            val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
-            if (appInfo.packageName != ownPackage) addApp(byPackage, appInfo)
+        try {
+            val launcherActivities = packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
+            launcherCount = launcherActivities.size
+            launcherActivities.forEach { info ->
+                val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
+                if (appInfo.packageName != ownPackage && isInstalled(appInfo)) addApp(byPackage, appInfo)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("Kadd", "Launcher query failed; using installed-package fallback", e)
         }
-        val installed = if (Build.VERSION.SDK_INT >= 33) {
-            packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
-        } else {
-            @Suppress("DEPRECATION") packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
+
+        // Path 2: inspect installed package activities and construct launchability
+        // from the declared MAIN/LAUNCHER activity instead of getLaunchIntentForPackage.
+        var installedCount = 0
+        try {
+            @Suppress("DEPRECATION")
+            val packages = packageManager.getInstalledPackages(PackageManager.GET_ACTIVITIES or PackageManager.MATCH_ALL)
+            installedCount = packages.size
+            packages.forEach { pkg ->
+                val appInfo = pkg.applicationInfo ?: return@forEach
+                if (appInfo.packageName == ownPackage || !isInstalled(appInfo)) return@forEach
+                val activities = pkg.activities.orEmpty()
+                val hasLauncherActivity = activities.any { activity ->
+                    activity.enabled && activity.exported && activity.intentFilters?.any { filter ->
+                        filter.hasAction(Intent.ACTION_MAIN) && filter.hasCategory(Intent.CATEGORY_LAUNCHER)
+                    } == true
+                }
+                if (hasLauncherActivity) addApp(byPackage, appInfo)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("Kadd", "Installed-package activity query failed", e)
         }
-        installed.forEach { appInfo ->
-            if (appInfo.packageName == ownPackage) return@forEach
-            if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) addApp(byPackage, appInfo)
+
+        // Path 3: final legacy fallback for devices where package activity metadata
+        // is incomplete. This preserves compatibility without excluding system apps.
+        if (byPackage.isEmpty()) {
+            try {
+                @Suppress("DEPRECATION")
+                val installed = packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
+                installedCount = maxOf(installedCount, installed.size)
+                installed.forEach { appInfo ->
+                    if (appInfo.packageName != ownPackage && isInstalled(appInfo) && isLaunchablePackage(appInfo.packageName)) addApp(byPackage, appInfo)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("Kadd", "Application fallback query failed", e)
+            }
         }
+
         val apps = byPackage.values.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
-        val counts = mapOf("launcherCount" to launcherActivities.size, "installedCount" to installed.size, "launchableCount" to apps.size)
+        val counts = mapOf("launcherCount" to launcherCount, "installedCount" to installedCount, "launchableCount" to apps.size)
         return Pair(apps, counts)
     }
+
+    private fun isInstalled(appInfo: ApplicationInfo): Boolean = (appInfo.flags and ApplicationInfo.FLAG_INSTALLED) != 0
 
     private fun discoverApps(): List<Map<String, Any?>> = discoverySnapshot().first
 
     private fun discoveryDiagnostics(): Map<String, Any> {
         val snapshot = discoverySnapshot()
-        return mapOf("launcherCount" to (snapshot.second["launcherCount"] ?: 0), "installedCount" to (snapshot.second["installedCount"] ?: 0), "launchableCount" to (snapshot.second["launchableCount"] ?: 0), "ownPackage" to applicationContext.packageName)
+        return mapOf(
+            "launcherCount" to (snapshot.second["launcherCount"] ?: 0),
+            "installedCount" to (snapshot.second["installedCount"] ?: 0),
+            "launchableCount" to (snapshot.second["launchableCount"] ?: 0),
+            "ownPackage" to applicationContext.packageName,
+            "queryAllPackagesDeclared" to true,
+        )
     }
 
     private fun addApp(destination: MutableMap<String, Map<String, Any?>>, appInfo: ApplicationInfo) {
