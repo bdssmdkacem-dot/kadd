@@ -4,6 +4,7 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/kadd_background.dart';
+import '../widgets/kadd_card.dart';
 
 class AppPickerScreen extends StatefulWidget {
   const AppPickerScreen({super.key});
@@ -21,9 +22,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _refreshApps(showErrors: false);
-      }
+      if (mounted) _refreshApps(showErrors: false);
     });
   }
 
@@ -35,9 +34,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
-      _refreshApps(showErrors: false);
-    }
+    if (state == AppLifecycleState.resumed && mounted) _refreshApps(showErrors: false);
   }
 
   Future<void> _refreshApps({required bool showErrors}) async {
@@ -69,9 +66,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
         await state.removeLockedApp(packageName);
       }
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تحديث القفل: $error')));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تحديث القفل: $error')));
     } finally {
       if (mounted) setState(() => _busyPackage = null);
     }
@@ -103,6 +98,25 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                       else
                         IconButton(icon: const Icon(Icons.refresh, color: AppColors.textDim), onPressed: () => _refreshApps(showErrors: true)),
                     ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                  child: KaddCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.lock_outline, color: AppColors.unlock, size: 21),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'يحتاج كدّ إلى معرفة التطبيقات القابلة للتشغيل حتى تتمكن من اختيار ما تريد قفله. قائمة التطبيقات تُستخدم داخل الجهاز فقط ولا تُرفع إلى خوادم كدّ.',
+                            style: AppTextStyles.body(size: 11.2, color: AppColors.textDim),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 if (!state.hasUsageAccess)
@@ -160,11 +174,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                               children: [
                                 const Icon(Icons.apps_outlined, size: 42, color: AppColors.textFaint),
                                 const SizedBox(height: 12),
-                                Text(
-                                  state.availableApps.isEmpty ? 'لم تظهر التطبيقات المثبتة بعد.' : 'ما لقيتش نتيجة',
-                                  textAlign: TextAlign.center,
-                                  style: AppTextStyles.body(size: 13, color: AppColors.textFaint),
-                                ),
+                                Text(state.availableApps.isEmpty ? 'لم تظهر التطبيقات المثبتة بعد.' : 'ما لقيتش نتيجة', textAlign: TextAlign.center, style: AppTextStyles.body(size: 13, color: AppColors.textFaint)),
                                 if (state.availableApps.isEmpty && state.availableAppsError != null) ...[
                                   const SizedBox(height: 8),
                                   Text('تشخيص: ${state.availableAppsError}', textAlign: TextAlign.center, style: AppTextStyles.body(size: 11, color: AppColors.textDim)),
