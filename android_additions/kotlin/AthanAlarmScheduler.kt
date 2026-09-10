@@ -127,6 +127,14 @@ object AthanAlarmScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             alarmManager.cancel(pendingIntent)
+            // Cancel alarms created by the previous request-code scheme as well.
+            val legacyIntent = PendingIntent.getBroadcast(
+                context,
+                parsed.name.lowercase(Locale.US).hashCode(),
+                Intent(context, AthanLockReceiver::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            alarmManager.cancel(legacyIntent)
         }
     }
 
@@ -171,19 +179,9 @@ object AthanAlarmScheduler {
         scheduleRefresh(context, alarmManager)
     }
 
-    private fun fetchTomorrowAndSchedule(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val city = prefs.getString(KEY_CITY, "").orEmpty()
-        val enabled = prefs.getStringSet(KEY_ENABLED, emptySet()) ?: emptySet()
-        val delay = prefs.getInt(KEY_DELAY, 5).coerceIn(0, 60)
-        if (city.isBlank() || enabled.isEmpty()) {
-            scheduleRefresh(context, context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
-            return
-        }
-
+    private fun fetchTimingsForDate(context: Context, city: String, enabled: Set<String>, calendar: Calendar): List<Map<String, Any>> {
         val tz = TimeZone.getTimeZone(TIME_ZONE)
-        val tomorrow = Calendar.getInstance(tz).apply { add(Calendar.DAY_OF_YEAR, 1) }
-        val date = SimpleDateFormat("dd-MM-yyyy", Locale.US).apply { timeZone = tz }.format(tomorrow.time)
+        val date = SimpleDateFormat("dd-MM-yyyy", Locale.US).apply { timeZone = tz }.format(calendar.time)
         val encodedCity = URLEncoder.encode(city, "UTF-8")
         val connection = (URL("https://api.aladhan.com/v1/timingsByCity?date=$date&city=$encodedCity&country=$COUNTRY&method=$METHOD").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -191,10 +189,10 @@ object AthanAlarmScheduler {
             readTimeout = 8000
         }
         try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) return
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) return emptyList()
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             val timings = JSONObject(body).getJSONObject("data").getJSONObject("timings")
-            val next = mutableListOf<Map<String, Any>>()
+            val result = mutableListOf<Map<String, Any>>()
             enabled.forEach { name ->
                 val key = when (name) {
                     "fajr" -> "Fajr"
@@ -208,19 +206,52 @@ object AthanAlarmScheduler {
                 if (hm.size != 2) return@forEach
                 val hour = hm[0].toIntOrNull() ?: return@forEach
                 val minute = hm[1].toIntOrNull() ?: return@forEach
-                val prayerCalendar = tomorrow.clone() as Calendar
+                val prayerCalendar = calendar.clone() as Calendar
                 prayerCalendar.set(Calendar.HOUR_OF_DAY, hour)
                 prayerCalendar.set(Calendar.MINUTE, minute)
                 prayerCalendar.set(Calendar.SECOND, 0)
                 prayerCalendar.set(Calendar.MILLISECOND, 0)
-                next += mapOf("name" to name, "epochMillis" to prayerCalendar.timeInMillis)
+                result += mapOf("name" to name, "epochMillis" to prayerCalendar.timeInMillis)
             }
-            appendFutureAlarms(context, next, delay)
+            return result
         } finally {
             connection.disconnect()
-            scheduleRefresh(context, context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
         }
     }
+
+    private fun fetchTomorrowAndSchedule(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val city = prefs.getString(KEY_CITY, "").orEmpty()
+        val enabled = prefs.getStringSet(KEY_ENABLED, emptySet()) ?: emptySet()
+        val delay = prefs.getInt(KEY_DELAY, 5).coerceIn(0, 60)
+        if (city.isBlank() || enabled.isEmpty()) {
+            scheduleRefresh(context, context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
+            return
+        }
+
+        val tomorrow = Calendar.getInstance(TimeZone.getTimeZone(TIME_ZONE)).apply { add(Calendar.DAY_OF_YEAR, 1) }
+        val next = fetchTimingsForDate(context, city, enabled, tomorrow)
+        if (next.isNotEmpty()) appendFutureAlarms(context, next, delay)
+        else scheduleRefresh(context, context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
+    }
+
+    /** Rebuilds today's and tomorrow's prayer alarms after reboot/date/time/timezone changes. */
+    fun refreshTodayAndTomorrow(context: Context) = Thread {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val city = prefs.getString(KEY_CITY, "").orEmpty()
+        val enabled = prefs.getStringSet(KEY_ENABLED, emptySet()) ?: emptySet()
+        val delay = prefs.getInt(KEY_DELAY, 5).coerceIn(0, 60)
+        if (city.isBlank() || enabled.isEmpty()) return@Thread
+
+        val tz = TimeZone.getTimeZone(TIME_ZONE)
+        val today = Calendar.getInstance(tz)
+        val tomorrow = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }
+        val rebuilt = mutableListOf<Map<String, Any>>()
+        rebuilt += fetchTimingsForDate(context, city, enabled, today)
+        rebuilt += fetchTimingsForDate(context, city, enabled, tomorrow)
+        if (rebuilt.isNotEmpty()) schedule(context, rebuilt, delay, city, enabled.toList())
+        else restore(context)
+    }.start()
 
     fun refreshNextDay(context: Context) = Thread { fetchTomorrowAndSchedule(context) }.start()
 }
