@@ -33,19 +33,28 @@ object LockPrefs {
         prefs(context).edit().putLong("unlock_until_$packageName", until).apply()
     }
 
-    /** Returns true only while the persisted exercise unlock deadline is future. */
+    /** Returns true only while the persisted exercise unlock deadline is future and no prayer lock is active. */
     fun isCurrentlyUnlocked(context: Context, packageName: String): Boolean {
         val key = "unlock_until_$packageName"
         val until = prefs(context).getLong(key, 0L)
-        val active = System.currentTimeMillis() < until
-        if (!active && until != 0L) {
+        val active = !isAthanLockActive(context) && System.currentTimeMillis() < until
+        if (!active && until != 0L && !isAthanLockActive(context)) {
             prefs(context).edit().remove(key).apply()
         }
         return active
     }
 
+    /**
+     * Activating a prayer lock invalidates all exercise unlock windows so they
+     * cannot bypass the prayer requirement. A later prayer unlock therefore
+     * returns the selected apps to their normal locked state.
+     */
     fun activateAthanLock(context: Context, prayerName: String) {
-        prefs(context).edit()
+        val editor = prefs(context).edit()
+        prefs(context).all.keys
+            .filter { it.startsWith("unlock_until_") }
+            .forEach(editor::remove)
+        editor
             .putBoolean(KEY_ATHAN_LOCK_ACTIVE, true)
             .putString(KEY_ACTIVE_PRAYER_NAME, prayerName)
             .putLong(KEY_ATHAN_LOCK_STARTED_AT, System.currentTimeMillis())
