@@ -40,6 +40,21 @@ object LockPrefs {
         return active
     }
 
+    /** Removes expired exercise unlock deadlines even when their apps are not foreground. */
+    fun pruneExpiredUnlocks(context: Context) {
+        if (isAthanLockActive(context)) return
+        val now = System.currentTimeMillis()
+        val editor = prefs(context).edit()
+        var changed = false
+        prefs(context).all.forEach { (key, value) ->
+            if (key.startsWith("unlock_until_") && value is Long && value <= now) {
+                editor.remove(key)
+                changed = true
+            }
+        }
+        if (changed) editor.apply()
+    }
+
     fun activateAthanLock(context: Context, prayerName: String) {
         val editor = prefs(context).edit()
         prefs(context).all.keys.filter { it.startsWith("unlock_until_") }.forEach(editor::remove)
@@ -85,7 +100,6 @@ object LockPrefs {
     }
 
     fun markLockActivityPaused(context: Context) {
-        // Keep ACTIVE during transient system/UI pauses; heartbeat expiry handles process death.
         prefs(context).edit().putBoolean(KEY_LOCK_ACTIVITY_RESUMED, false).apply()
     }
 
