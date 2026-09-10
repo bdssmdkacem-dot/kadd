@@ -1,5 +1,6 @@
 package com.comptaflow.kadd
 
+import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
@@ -18,6 +19,7 @@ import java.util.Locale
 
 class MainActivity : FlutterActivity() {
     private val channelName = "com.comptaflow.kadd/lock"
+    private val validPrayers = setOf("fajr", "dhuhr", "asr", "maghrib", "isha")
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -25,6 +27,15 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "hasUsageAccess" -> result.success(hasUsageAccess())
                 "requestUsageAccess" -> { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); result.success(null) }
+                "canScheduleExactAlarms" -> result.success(canScheduleExactAlarms())
+                "requestExactAlarmAccess" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply { data = android.net.Uri.parse("package:$packageName") })
+                    }
+                    result.success(null)
+                }
+                "isAthanLockActive" -> result.success(LockPrefs.isAthanLockActive(this))
+                "activePrayerName" -> result.success(LockPrefs.getActivePrayerName(this))
                 "getLaunchableApps" -> try { result.success(discoverApps()) } catch (e: Exception) {
                     android.util.Log.e("Kadd", "App discovery failed", e)
                     result.error("APP_LIST_ERROR", e.message ?: "Unable to discover apps", null)
@@ -34,35 +45,70 @@ class MainActivity : FlutterActivity() {
                     result.error("APP_DIAGNOSTICS_ERROR", e.message ?: "Unable to inspect installed apps", null)
                 }
                 "syncLockedPackages" -> {
-                    val packages = call.argument<List<String>>("packages") ?: emptyList()
+                    val packages = call.argument<List<String>>("packages")
+                        ?.map(String::trim)
+                        ?.filter(String::isNotEmpty)
+                        ?.distinct()
+                        ?.take(MAX_LOCKED_PACKAGES)
+                        ?: emptyList()
                     LockPrefs.setLockedPackages(this, packages)
                     if (packages.isEmpty()) stopService(Intent(this, LockForegroundService::class.java)) else LockForegroundService.ensureRunning(this)
                     result.success(null)
                 }
-                "grantTemporaryUnlock" -> {
-                    val packageName = call.argument<String>("packageName")
-                    val minutes = call.argument<Int>("minutes")
-                    if (packageName.isNullOrBlank() || minutes == null || minutes <= 0) result.error("INVALID_UNLOCK", "packageName and positive minutes are required", null)
-                    else { LockPrefs.grantUnlockUntil(this, packageName, minutes); result.success(null) }
-                }
-                "grantAthanUnlock" -> { LockPrefs.grantAthanUnlockForCurrentWindow(this); result.success(null) }
-                "scheduleAthanLocks" -> {
-                    @Suppress("UNCHECKED_CAST")
-                    val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
-                    val enabled = call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String }
-                    AthanAlarmScheduler.schedule(
-                        this,
-                        prayers,
-                        call.argument<Int>("delayMinutes") ?: 5,
-                        call.argument<String>("cityName"),
-                        enabled,
-                    )
+                "clearAllLockState" -> {
+                    LockPrefs.clearAllLockState(this)
+                    stopService(Intent(this, LockForegroundService::class.java))
                     result.success(null)
+                }
+                "grantTemporaryUnlock" -> {
+                    val packageName = call.argument<String>("packageName")?.trim().orEmpty()
+                    val minutes = call.argument<Int>("minutes")
+                    if (!isValidPackageName(packageName) || minutes == null || minutes !in 1..180) {
+                        result.error("INVALID_UNLOCK", "A valid packageName and minutes in 1..180 are required", null)
+                    } else if (packageName !in LockPrefs.getLockedPackages()) {
+                        result.error("INVALID_UNLOCK", "Package is not currently locked by Kadd", null)
+                    } else {
+                        LockPrefs.grantUnlockUntil(this, packageName, minutes)
+                        result.success(null)
+                    }
+                }
+                "grantAthanUnlock" -> {
+                    val prayer = call.argument<String>("prayer")?.trim()?.lowercase(Locale.US).orEmpty()
+                    if (prayer !in validPrayers) {
+                        result.error("INVALID_PRAYER", "Unknown prayer", null)
+                    } else {
+                        result.success(LockPrefs.grantAthanUnlockForPrayer(this, prayer))
+                    }
+                }
+                "scheduleAthanLocks" -> {
+                    val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
+                    val enabled = call.argument<List<String>>("enabledPrayerNames")
+                        ?.map(String::trim)
+                        ?.map { it.lowercase(Locale.US) }
+                        ?.filter(validPrayers::contains)
+                        ?.distinct()
+                        ?: prayers.mapNotNull { (it["name"] as? String)?.trim()?.lowercase(Locale.US) }.filter(validPrayers::contains).distinct()
+                    val delay = call.argument<Int>("delayMinutes")
+                    if (delay == null || delay !in 0..60) {
+                        result.error("INVALID_SCHEDULE", "delayMinutes must be in 0..60", null)
+                    } else {
+                        AthanAlarmScheduler.schedule(this, prayers, delay, call.argument<String>("cityName"), enabled)
+                        result.success(null)
+                    }
                 }
                 else -> result.notImplemented()
             }
         }
     }
+
+    private fun canScheduleExactAlarms(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return alarmManager.canScheduleExactAlarms()
+    }
+
+    private fun isValidPackageName(packageName: String): Boolean =
+        packageName.length in 1..255 && packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))
 
     private fun discoverySnapshot(): Pair<List<Map<String, Any?>>, Map<String, Int>> {
         val byPackage = linkedMapOf<String, Map<String, Any?>>()
@@ -73,7 +119,6 @@ class MainActivity : FlutterActivity() {
             val appInfo = info.activityInfo?.applicationInfo ?: return@forEach
             if (appInfo.packageName != ownPackage) addApp(byPackage, appInfo)
         }
-
         val installed = if (Build.VERSION.SDK_INT >= 33) {
             packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
         } else {
@@ -83,7 +128,6 @@ class MainActivity : FlutterActivity() {
             if (appInfo.packageName == ownPackage) return@forEach
             if (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null) addApp(byPackage, appInfo)
         }
-
         val apps = byPackage.values.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
         val counts = mapOf("launcherCount" to launcherActivities.size, "installedCount" to installed.size, "launchableCount" to apps.size)
         return Pair(apps, counts)
@@ -93,24 +137,14 @@ class MainActivity : FlutterActivity() {
 
     private fun discoveryDiagnostics(): Map<String, Any> {
         val snapshot = discoverySnapshot()
-        return mapOf(
-            "launcherCount" to (snapshot.second["launcherCount"] ?: 0),
-            "installedCount" to (snapshot.second["installedCount"] ?: 0),
-            "launchableCount" to (snapshot.second["launchableCount"] ?: 0),
-            "ownPackage" to applicationContext.packageName,
-        )
+        return mapOf("launcherCount" to (snapshot.second["launcherCount"] ?: 0), "installedCount" to (snapshot.second["installedCount"] ?: 0), "launchableCount" to (snapshot.second["launchableCount"] ?: 0), "ownPackage" to applicationContext.packageName)
     }
 
     private fun addApp(destination: MutableMap<String, Map<String, Any?>>, appInfo: ApplicationInfo) {
         val packageName = appInfo.packageName
         if (destination.containsKey(packageName)) return
         val label = try { appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty() } catch (_: Exception) { "" }
-        destination[packageName] = mapOf(
-            "name" to if (label.isEmpty()) packageName else label,
-            "packageName" to packageName,
-            "icon" to try { drawableToPng(appInfo.loadIcon(packageManager)) } catch (_: Exception) { null },
-            "isSystemApp" to ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0),
-        )
+        destination[packageName] = mapOf("name" to if (label.isEmpty()) packageName else label, "packageName" to packageName, "icon" to try { drawableToPng(appInfo.loadIcon(packageManager)) } catch (_: Exception) { null }, "isSystemApp" to ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0))
     }
 
     private fun drawableToPng(drawable: android.graphics.drawable.Drawable): ByteArray? = try {
@@ -126,4 +160,6 @@ class MainActivity : FlutterActivity() {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         return appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName) == AppOpsManager.MODE_ALLOWED
     }
+
+    companion object { private const val MAX_LOCKED_PACKAGES = 100 }
 }
