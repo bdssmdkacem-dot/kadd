@@ -49,6 +49,11 @@ class MainActivity : FlutterActivity() {
                     if (packages.isEmpty()) stopService(Intent(this, LockForegroundService::class.java)) else LockForegroundService.ensureRunning(this)
                     result.success(null)
                 }
+                "clearAllLockState" -> {
+                    LockPrefs.clearAllLockState(this)
+                    stopService(Intent(this, LockForegroundService::class.java))
+                    result.success(null)
+                }
                 "grantTemporaryUnlock" -> {
                     val packageName = call.argument<String>("packageName")
                     val minutes = call.argument<Int>("minutes")
