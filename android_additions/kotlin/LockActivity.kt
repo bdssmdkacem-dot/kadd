@@ -35,6 +35,12 @@ class LockActivity : FlutterActivity() {
         recreate()
     }
 
+    /** Never allow the Android back action to dismiss the enforcement screen. */
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        // Unlock must happen through the configured exercise or prayer flow.
+    }
+
     override fun getInitialRoute(): String {
         return if (LockPrefs.isAthanLockActive(this)) {
             val prayer = LockPrefs.getActivePrayerName(this) ?: "dhuhr"
