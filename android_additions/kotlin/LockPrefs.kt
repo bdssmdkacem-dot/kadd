@@ -16,6 +16,7 @@ object LockPrefs {
     private const val KEY_LOCK_ACTIVITY_HEARTBEAT = "lock_activity_heartbeat"
     private const val LOCK_ACTIVITY_HEARTBEAT_TIMEOUT_MS = 8_000L
     private const val MAX_ATHAN_LOCK_AGE_MS = 24L * 60L * 60L * 1000L
+    private val VALID_PRAYERS = setOf("fajr", "dhuhr", "asr", "maghrib", "isha")
 
     fun setLockedPackages(context: Context, packages: List<String>) {
         val cleaned = packages.asSequence().map(String::trim).filter(String::isNotEmpty).toSet()
@@ -26,13 +27,17 @@ object LockPrefs {
         prefs(context).getStringSet(KEY_LOCKED_PACKAGES, emptySet())?.toSet() ?: emptySet()
 
     fun grantUnlockUntil(context: Context, packageName: String, minutes: Int) {
+        val safePackage = packageName.trim()
         val safeMinutes = minutes.coerceAtLeast(0)
+        if (safePackage.isEmpty() || safeMinutes <= 0) return
         val until = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(safeMinutes.toLong())
-        prefs(context).edit().putLong("unlock_until_$packageName", until).apply()
+        prefs(context).edit().putLong("unlock_until_$safePackage", until).apply()
     }
 
     fun isCurrentlyUnlocked(context: Context, packageName: String): Boolean {
-        val key = "unlock_until_$packageName"
+        val safePackage = packageName.trim()
+        if (safePackage.isEmpty()) return false
+        val key = "unlock_until_$safePackage"
         val until = prefs(context).getLong(key, 0L)
         val prayerLockActive = isAthanLockActive(context)
         val active = !prayerLockActive && System.currentTimeMillis() < until
@@ -61,10 +66,12 @@ object LockPrefs {
     }
 
     fun activateAthanLock(context: Context, prayerName: String) {
+        val normalized = prayerName.trim().lowercase(java.util.Locale.US)
+        if (normalized !in VALID_PRAYERS) return
         val editor = prefs(context).edit()
         prefs(context).all.keys.filter { it.startsWith("unlock_until_") }.forEach(editor::remove)
         editor.putBoolean(KEY_ATHAN_LOCK_ACTIVE, true)
-            .putString(KEY_ACTIVE_PRAYER_NAME, prayerName)
+            .putString(KEY_ACTIVE_PRAYER_NAME, normalized)
             .putLong(KEY_ATHAN_LOCK_STARTED_AT, System.currentTimeMillis())
             .apply()
     }
@@ -83,7 +90,18 @@ object LockPrefs {
     fun getActivePrayerName(context: Context): String? =
         if (isAthanLockActive(context)) prefs(context).getString(KEY_ACTIVE_PRAYER_NAME, null) else null
 
-    fun grantAthanUnlockForCurrentWindow(context: Context) = clearAthanLock(context)
+    /** Unlocks only when the supplied prayer is the currently active prayer lock. */
+    fun grantAthanUnlockForPrayer(context: Context, prayerName: String): Boolean {
+        val normalized = prayerName.trim().lowercase(java.util.Locale.US)
+        if (normalized !in VALID_PRAYERS || !isAthanLockActive(context)) return false
+        if (getActivePrayerName(context)?.lowercase(java.util.Locale.US) != normalized) return false
+        clearAthanLock(context)
+        return true
+    }
+
+    fun grantAthanUnlockForCurrentWindow(context: Context) {
+        if (isAthanLockActive(context)) clearAthanLock(context)
+    }
 
     /** Marks the verification Activity alive and starts its recovery heartbeat. */
     fun markLockActivityResumed(context: Context, packageName: String?) {
