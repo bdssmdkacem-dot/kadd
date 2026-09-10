@@ -19,6 +19,16 @@ class LockActivity : FlutterActivity() {
     private val completionCheck = object : Runnable {
         override fun run() {
             if (isFinishing || isDestroyedCompat()) return
+
+            // Prayer lock has higher priority than an exercise unlock. If the
+            // prayer window starts while the user is already verifying an app,
+            // switch this same native task to the prayer verification route.
+            if (!prayerVerification && LockPrefs.isAthanLockActive(this@LockActivity)) {
+                prayerVerification = true
+                recreate()
+                return
+            }
+
             if (verificationCompleted()) {
                 finishAndRemoveTask()
                 return
