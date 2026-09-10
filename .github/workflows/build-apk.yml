@@ -12,6 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.41.9
@@ -24,6 +29,7 @@ jobs:
           test -f android/settings.gradle
           test -f android/app/src/main/AndroidManifest.xml
           test -f android/app/src/main/kotlin/com/comptaflow/kadd/MainActivity.kt
+          test -d android_additions/kotlin
 
       - name: Copy native Kotlin sources into the Android project
         run: |
@@ -33,9 +39,6 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
-      # Flutter may migrate analysis_options.yaml during pub get on newer
-      # stable releases. Restore the repository's intentional analyzer policy
-      # before running the quality gate.
       - name: Restore analyzer configuration
         run: git checkout -- analysis_options.yaml
 
@@ -48,58 +51,38 @@ jobs:
       - name: Flutter tests
         run: flutter test
 
-      # Production secrets are injected only when configured in GitHub.
-      # Without them, verification builds intentionally fall back to Google's
-      # official AdMob test IDs and the generated debug signing key.
-      - name: Configure release build inputs
+      # Keep verification builds independent from production credentials.
+      # Real Play signing is intentionally supplied only by CI secrets when
+      # configured; otherwise android/app/build.gradle uses debug signing.
+      - name: Configure optional release signing
         env:
-          KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
-          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
-          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
           KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
-          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
-          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
-          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
         run: |
-          if [ -n "$KADD_RELEASE_KEYSTORE" ]; then
-            test -f "$KADD_RELEASE_KEYSTORE"
-          else
-            mkdir -p "$HOME/.android"
-            if [ ! -f "$HOME/.android/debug.keystore" ]; then
-              keytool -genkeypair -v \
-                -keystore "$HOME/.android/debug.keystore" \
-                -storepass android \
-                -alias AndroidDebugKey \
-                -keypass android \
-                -keyalg RSA \
-                -keysize 2048 \
-                -validity 10000 \
-                -dname "CN=Android Debug,O=Android,C=US"
-            fi
-            echo "Using generated debug signing key for verification build."
+          if [ -n "$KADD_RELEASE_KEYSTORE" ] && [ ! -f "$KADD_RELEASE_KEYSTORE" ]; then
+            echo "Configured release keystore path does not exist: $KADD_RELEASE_KEYSTORE"
+            exit 1
           fi
+
+      - name: Clean Android build outputs
+        run: flutter clean
 
       - name: Build release APK
         env:
           KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
-          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
-          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
           KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
           KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
           KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
           KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
-        run: flutter build apk --release -v
+        run: flutter build apk --release
 
       - name: Build release AAB
         env:
           KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
-          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
-          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
           KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
           KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
           KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
           KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
-        run: flutter build appbundle --release -v
+        run: flutter build appbundle --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
