@@ -8,7 +8,6 @@ import '../services/rug_classifier.dart';
 import '../services/rug_verification_policy.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
-import '../widgets/kadd_card.dart';
 
 class RugScanScreen extends StatefulWidget {
   final PrayerName prayer;
@@ -23,34 +22,33 @@ class _RugScanScreenState extends State<RugScanScreen> {
   CameraController? _controller;
   final RugClassifier _classifier = RugClassifier();
   final List<double> _confidences = <double>[];
+  bool _initializing = true;
+  bool _capturing = false;
   bool _verifying = false;
-  bool _showSuccess = false;
   String? _error;
-
-  static const List<String> _steps = <String>[
-    'صوّر السجادة بوضوح',
-    'غيّر زاوية التصوير قليلًا',
-    'التقط الصورة الأخيرة للتأكد',
-  ];
 
   @override
   void initState() {
     super.initState();
-    _initCamera();
+    SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
+    _initializeCamera();
   }
 
-  Future<void> _initCamera() async {
+  Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) throw StateError('لا توجد كاميرا متاحة');
-      final backCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
+      if (cameras.isEmpty) {
+        throw StateError('لا توجد كاميرا متاحة على الجهاز');
+      }
+      final camera = cameras.firstWhere(
+        (item) => item.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
       final controller = CameraController(
-        backCamera,
+        camera,
         ResolutionPreset.medium,
         enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
       );
       await controller.initialize();
       if (!mounted) {
@@ -59,173 +57,153 @@ class _RugScanScreenState extends State<RugScanScreen> {
       }
       setState(() {
         _controller = controller;
-        _error = null;
+        _initializing = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      setState(() => _error = 'تعذر تشغيل الكاميرا. تحقق من صلاحية الكاميرا وحاول مرة أخرى.');
+      setState(() {
+        _initializing = false;
+        _error = 'تعذر تشغيل الكاميرا: $error';
+      });
     }
   }
 
   Future<void> _captureStep() async {
     final controller = _controller;
-    if (_verifying || _showSuccess || controller == null || !controller.value.isInitialized) return;
-
-    setState(() => _verifying = true);
-    try {
-      final image = await controller.takePicture();
-      final result = await _classifier.classify(image.path);
-      final next = <double>[..._confidences, result];
-      if (!mounted) return;
-      setState(() {
-        _confidences
-          ..clear()
-          ..addAll(next);
-      });
-      if (next.length == RugVerificationPolicy.requiredCaptures) {
-        await _finishVerification(next);
-      }
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _verifying = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر تحليل هذه الصورة. لم تُحسب الخطوة.')),
-      );
-    }
-    if (mounted) setState(() => _verifying = false);
-  }
-
-  Future<void> _finishVerification(List<double> confidences) async {
-    final passed = RugVerificationPolicy.passes(confidences);
-    final average = RugVerificationPolicy.average(confidences);
-    if (!passed) {
-      HapticFeedback.lightImpact();
-      if (!mounted) return;
-      setState(() => _confidences.clear());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'لم تكتمل المطابقة المتسقة. متوسط الثقة ${(average * 100).toStringAsFixed(0)}٪. أعد المحاولة من زوايا مختلفة.',
-          ),
-        ),
-      );
+    if (controller == null || !controller.value.isInitialized || _capturing || _verifying) {
       return;
     }
 
-    HapticFeedback.heavyImpact();
-    if (!mounted) return;
-    setState(() => _showSuccess = true);
+    setState(() => _capturing = true);
     try {
+      final file = await controller.takePicture();
+      final confidence = await _classifier.classify(file.path);
+      if (!mounted) return;
+      setState(() => _confidences.add(confidence));
+
+      if (_confidences.length >= RugVerificationPolicy.minimumCaptures) {
+        await _finishVerification();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = 'تعذر تحليل الصورة. حاول مرة أخرى.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل التحقق: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  Future<void> _finishVerification() async {
+    if (_verifying) return;
+    setState(() {
+      _verifying = true;
+      _error = null;
+    });
+
+    try {
+      final passed = RugVerificationPolicy.passes(_confidences);
+      if (!passed) {
+        if (!mounted) return;
+        setState(() {
+          _confidences.clear();
+          _verifying = false;
+          _error = 'لم ينجح التحقق من سجادة الصلاة. أعد المحاولة مع صورة أوضح.';
+        });
+        return;
+      }
+
       await context.read<AppState>().onRugVerified(widget.prayer);
       if (!mounted) return;
-      await Future<void>.delayed(const Duration(milliseconds: 700));
-      if (mounted) Navigator.pop(context);
-    } catch (_) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
       if (!mounted) return;
       setState(() {
-        _showSuccess = false;
-        _confidences.clear();
+        _verifying = false;
+        _error = 'تعذر إكمال فتح القفل. حاول مرة أخرى.';
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر فتح التطبيقات لأن حالة الصلاة لم تعد صالحة. حاول مرة أخرى.')),
+        SnackBar(content: Text('لم يتم فتح القفل: $error')),
       );
     }
   }
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _controller?.dispose();
-    _classifier.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final step = _confidences.length;
-    final currentStep = step >= RugVerificationPolicy.requiredCaptures
-        ? RugVerificationPolicy.requiredCaptures - 1
-        : step;
-
+    final controller = _controller;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: AppColors.ink,
-        body: Stack(
-          children: [
-            if (_controller != null && _controller!.value.isInitialized)
-              Positioned.fill(child: CameraPreview(_controller!))
-            else
-              Center(
-                child: _error != null
-                    ? Text(_error!, textAlign: TextAlign.center, style: AppTextStyles.body(size: 13))
-                    : const CircularProgressIndicator(color: AppColors.unlock),
-              ),
-            Positioned.fill(
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            onPressed: _verifying || _showSuccess ? null : () => Navigator.pop(context),
-                            icon: const Icon(Icons.close, color: Colors.white),
-                          ),
-                          const Spacer(),
-                          Text('تحقق السجادة', style: AppTextStyles.kufi(size: 17, color: Colors.white)),
-                        ],
-                      ),
-                      const Spacer(),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.62),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              _showSuccess ? 'تم التحقق' : _steps[currentStep],
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.kufi(size: 15, color: Colors.white),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'الصلاة: ${widget.prayer.labelAr}',
-                              style: AppTextStyles.body(size: 12, color: Colors.white70),
-                            ),
-                            const SizedBox(height: 12),
-                            if (_showSuccess)
-                              const Icon(Icons.verified_rounded, size: 44, color: AppColors.unlock)
-                            else ...[
-                              LinearProgressIndicator(
-                                value: _confidences.length / RugVerificationPolicy.requiredCaptures,
-                                backgroundColor: Colors.white24,
-                                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.unlock),
-                              ),
-                              const SizedBox(height: 10),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: _verifying || _controller == null ? null : _captureStep,
-                                  icon: _verifying
-                                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                                      : const Icon(Icons.camera_alt_outlined),
-                                  label: Text(_verifying ? 'جارٍ التحقق...' : 'التقاط الصورة'),
+        appBar: AppBar(
+          title: Text('تحقق من سجادة الصلاة', style: AppTextStyles.kufi(size: 16)),
+          backgroundColor: AppColors.ink,
+        ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Text(
+                  widget.prayer.labelAr,
+                  style: AppTextStyles.kufi(size: 22, color: AppColors.unlock),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'التقط ثلاث صور متتالية للسجادة للتأكد من ثبات النتيجة.',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.body(size: 13, color: AppColors.textDim),
+                ),
+                const SizedBox(height: 20),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: _initializing
+                        ? const Center(child: CircularProgressIndicator(color: AppColors.unlock))
+                        : controller != null && controller.value.isInitialized
+                            ? CameraPreview(controller)
+                            : Center(
+                                child: Text(
+                                  _error ?? 'الكاميرا غير متاحة',
+                                  textAlign: TextAlign.center,
+                                  style: AppTextStyles.body(size: 14, color: AppColors.signal),
                                 ),
                               ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
                   ),
                 ),
-              ),
+                const SizedBox(height: 16),
+                Text(
+                  'الصور: ${_confidences.length}/${RugVerificationPolicy.minimumCaptures}',
+                  style: AppTextStyles.body(size: 13, color: AppColors.textDim),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.body(size: 12, color: AppColors.signal),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _capturing || _verifying || _initializing ? null : _captureStep,
+                    child: Text(_capturing ? 'جارٍ التحليل…' : _verifying ? 'جارٍ التحقق…' : 'التقاط الصورة'),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
