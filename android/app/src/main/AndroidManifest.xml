@@ -74,6 +74,17 @@
         </receiver>
 
         <receiver
+            android:name=".PackageRemovedReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".AthanLockReceiver"
             android:exported="false" />
 
