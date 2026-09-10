@@ -18,7 +18,7 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 - [x] Persistent next-prayer alarms restored after reboot/app update.
 - [x] Prayer-rug verification pipeline using on-device image labeling.
 - [x] Local persistence with SharedPreferences.
-- [x] AdMob integration.
+- [x] AdMob integration with consent flow.
 - [x] GitHub Actions release APK build.
 
 ## Phase 1 — Stabilization
@@ -42,20 +42,20 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 - [x] Defensive persistence and validation of per-app configuration.
 - [x] Independent initialization of app discovery and prayer refresh so network failure does not block the app.
 - [x] Reliable exercise session state: current reps, target, lost-tracking recovery, camera failure/retry, completion, and duplicate-completion protection.
-- [ ] Prayer setup: city, enabled prayers, delay, next prayer status, and clear active-lock state.
-- [ ] Prayer verification flow with camera guidance and failure/retry handling.
-- [ ] Statistics: daily, weekly, streak, total repetitions, earned minutes, and per-app history.
-- [ ] Settings: reset data, diagnostics, privacy policy, permissions, ads/privacy controls.
+- [x] Prayer setup: city, enabled prayers, delay, next prayer status, and active-lock state.
+- [x] Prayer verification flow with camera guidance and failure/retry handling.
+- [x] Statistics: daily, weekly, streak, total repetitions, earned minutes, and per-app history.
+- [x] Settings: reset data, diagnostics, privacy information, permissions, and ads/privacy controls.
 
 ## Phase 3 — Reliability & security
 
-- [ ] Idempotent native lock/unlock state transitions.
-- [ ] Safe handling of package removal/uninstall while an app is locked.
+- [x] Idempotent native lock/unlock state transitions.
+- [x] Safe handling of package removal/uninstall while an app is locked.
 - [x] Recovery after reboot for persisted app locks and known prayer alarms.
-- [ ] Recovery after process death and app update beyond boot receiver restoration.
-- [ ] Prevent stale unlock windows and stale prayer locks.
+- [x] Recovery after app update through the boot/update receiver; service uses sticky restart semantics for process death.
+- [x] Prevent stale exercise unlock windows and stale prayer locks.
 - [x] Validate persisted MethodChannel/app configuration data defensively.
-- [ ] Avoid logging package lists or other unnecessary user/device data.
+- [x] Avoid logging package lists or other unnecessary user/device data in normal operation.
 - [x] Add regression tests for the discovered navigation and exercise-state bugs.
 
 ## Phase 4 — Production release
@@ -64,7 +64,7 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 - [ ] Configure Play App Signing/upload key outside the repository.
 - [ ] Build signed AAB in CI.
 - [ ] Complete Data Safety and sensitive-permission declarations.
-- [ ] Host the privacy policy publicly.
+- [ ] Host the privacy policy publicly and keep its wording aligned with the actual SDK/data flows.
 - [ ] Verify foreground-service and package-visibility declarations against the current Google Play policy before submission.
 - [ ] Internal test → closed test → production rollout.
 - [ ] Crash/ANR monitoring and release checklist.
@@ -80,3 +80,7 @@ A Kadd release is considered production-ready only when:
 5. No camera image, pose data, installed-app inventory, or usage history is uploaded by Kadd itself.
 6. Core flows have automated tests and have been verified on physical Android hardware.
 7. CI produces a signed release AAB using a production signing setup that is not committed to GitHub.
+
+## Important production caveat
+
+The current prayer-rug verifier uses generic on-device ML Kit image labels (`rug`, `carpet`, `mat`, etc.) plus a multi-capture confidence policy. This is a fail-closed verification flow, but generic image labels are not equivalent to a dedicated prayer-rug classifier. A production-quality release should either ship a validated custom on-device model or use a stronger verification design before claiming high-confidence prayer-rug authentication.
