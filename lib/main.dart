@@ -123,17 +123,49 @@ class _LockRepEntry extends StatelessWidget {
             body: Center(child: CircularProgressIndicator(color: AppColors.unlock)),
           );
         }
-        if (state.apps.isEmpty) {
-          return const RootNav();
+
+        final requested = packageName?.trim();
+        final app = requested == null || requested.isEmpty
+            ? null
+            : state.apps.cast<dynamic>().where((item) => item.packageName == requested).firstOrNull;
+
+        if (app == null || !app.isEnabled) {
+          return const _InvalidLockEntry();
         }
-        final app = packageName == null
-            ? state.apps.first
-            : state.apps.firstWhere(
-                (item) => item.packageName == packageName,
-                orElse: () => state.apps.first,
-              );
+
         return RepCameraScreen(app: app);
       },
+    );
+  }
+}
+
+class _InvalidLockEntry extends StatelessWidget {
+  const _InvalidLockEntry();
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: AppColors.ink,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline, size: 56, color: AppColors.signal),
+                const SizedBox(height: 16),
+                Text('تعذر التحقق من التطبيق المقفول', textAlign: TextAlign.center, style: AppTextStyles.kufi(size: 18)),
+                const SizedBox(height: 8),
+                Text('لم يتم منح أي وقت فتح. ارجع إلى كدّ وحاول من جديد.', textAlign: TextAlign.center, style: AppTextStyles.body(size: 12, color: AppColors.textDim)),
+                const SizedBox(height: 18),
+                KaddPrimaryButton(label: 'إغلاق', onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
