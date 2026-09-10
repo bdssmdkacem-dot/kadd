@@ -60,7 +60,16 @@ class MainActivity : FlutterActivity() {
                     if (packageName.isNullOrBlank() || minutes == null || minutes <= 0) result.error("INVALID_UNLOCK", "packageName and positive minutes are required", null)
                     else { LockPrefs.grantUnlockUntil(this, packageName, minutes); result.success(null) }
                 }
-                "grantAthanUnlock" -> { LockPrefs.grantAthanUnlockForCurrentWindow(this); result.success(null) }
+                "grantAthanUnlock" -> {
+                    val requestedPrayer = call.argument<String>("prayer")?.trim()
+                    val activePrayer = LockPrefs.getActivePrayerName(this)
+                    if (requestedPrayer.isNullOrEmpty() || activePrayer == null || requestedPrayer != activePrayer) {
+                        result.success(false)
+                    } else {
+                        LockPrefs.grantAthanUnlockForCurrentWindow(this)
+                        result.success(true)
+                    }
+                }
                 "scheduleAthanLocks" -> {
                     @Suppress("UNCHECKED_CAST")
                     val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
