@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'models/locked_app.dart';
 import 'models/prayer.dart';
 import 'state/app_state.dart';
 import 'services/ads_service.dart';
 import 'theme.dart';
+import 'widgets/kadd_card.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/prayer_settings_screen.dart';
@@ -129,15 +131,14 @@ class _LockRepEntry extends StatelessWidget {
           return const _InvalidLockEntry();
         }
 
-        LockedAppCandidate? candidate;
+        LockedApp? app;
         for (final item in state.apps) {
           if (item.packageName == requested) {
-            candidate = LockedAppCandidate(item);
+            app = item;
             break;
           }
         }
 
-        final app = candidate?.app;
         if (app == null || !app.isEnabled) {
           return const _InvalidLockEntry();
         }
@@ -146,11 +147,6 @@ class _LockRepEntry extends StatelessWidget {
       },
     );
   }
-}
-
-class LockedAppCandidate {
-  final dynamic app;
-  LockedAppCandidate(this.app);
 }
 
 class _InvalidLockEntry extends StatelessWidget {
