@@ -1,5 +1,6 @@
 package com.comptaflow.kadd
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -25,6 +26,20 @@ class LockActivity : FlutterActivity() {
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
+    }
+
+    /**
+     * The foreground service uses SINGLE_TOP. If a prayer lock arrives while
+     * the rep lock activity is already visible, Flutter would otherwise keep
+     * the old route because getInitialRoute() is only evaluated at creation.
+     * Recreate the activity so the new persisted lock state selects the
+     * correct prayer/rep route.
+     */
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent == null) return
+        setIntent(intent)
+        recreate()
     }
 
     override fun getInitialRoute(): String {
