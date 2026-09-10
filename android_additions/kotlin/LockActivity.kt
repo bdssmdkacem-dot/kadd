@@ -28,16 +28,9 @@ class LockActivity : FlutterActivity() {
         }
     }
 
-    /**
-     * The foreground service uses SINGLE_TOP. If a prayer lock arrives while
-     * the rep lock activity is already visible, Flutter would otherwise keep
-     * the old route because getInitialRoute() is only evaluated at creation.
-     * Recreate the activity so the new persisted lock state selects the
-     * correct prayer/rep route.
-     */
-    override fun onNewIntent(intent: Intent?) {
+    /** Refresh the lock route when a new lock intent reaches an existing activity. */
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent == null) return
         setIntent(intent)
         recreate()
     }
