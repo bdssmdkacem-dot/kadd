@@ -3,6 +3,7 @@ package com.comptaflow.kadd
 import android.content.Context
 import java.util.concurrent.TimeUnit
 
+/** Persistent source of truth for Kadd's native lock state. */
 object LockPrefs {
     private const val PREFS = "kadd_lock_prefs"
     private const val KEY_LOCKED_PACKAGES = "locked_packages"
@@ -12,6 +13,8 @@ object LockPrefs {
     private const val KEY_LOCK_ACTIVITY_ACTIVE = "lock_activity_active"
     private const val KEY_LOCK_ACTIVITY_RESUMED = "lock_activity_resumed"
     private const val KEY_LOCK_ACTIVITY_PACKAGE = "lock_activity_package"
+    private const val KEY_LOCK_ACTIVITY_HEARTBEAT = "lock_activity_heartbeat"
+    private const val LOCK_ACTIVITY_HEARTBEAT_TIMEOUT_MS = 8_000L
     private const val MAX_ATHAN_LOCK_AGE_MS = 24L * 60L * 60L * 1000L
 
     fun setLockedPackages(context: Context, packages: List<String>) {
@@ -35,6 +38,26 @@ object LockPrefs {
         val active = !prayerLockActive && System.currentTimeMillis() < until
         if (!active && until != 0L && !prayerLockActive) prefs(context).edit().remove(key).apply()
         return active
+    }
+
+    /** Removes expired or orphaned exercise unlock deadlines. */
+    fun pruneExpiredUnlocks(context: Context) {
+        if (isAthanLockActive(context)) return
+        val now = System.currentTimeMillis()
+        val locked = getLockedPackages(context)
+        val editor = prefs(context).edit()
+        var changed = false
+        prefs(context).all.forEach { (key, value) ->
+            if (!key.startsWith("unlock_until_")) return@forEach
+            val packageName = key.removePrefix("unlock_until_")
+            val expired = value is Long && value <= now
+            val orphaned = packageName.isBlank() || packageName !in locked
+            if (expired || orphaned) {
+                editor.remove(key)
+                changed = true
+            }
+        }
+        if (changed) editor.apply()
     }
 
     fun activateAthanLock(context: Context, prayerName: String) {
@@ -62,11 +85,22 @@ object LockPrefs {
 
     fun grantAthanUnlockForCurrentWindow(context: Context) = clearAthanLock(context)
 
+    /** Marks the verification Activity alive and starts its recovery heartbeat. */
     fun markLockActivityResumed(context: Context, packageName: String?) {
         prefs(context).edit()
             .putBoolean(KEY_LOCK_ACTIVITY_ACTIVE, true)
             .putBoolean(KEY_LOCK_ACTIVITY_RESUMED, true)
             .putString(KEY_LOCK_ACTIVITY_PACKAGE, packageName?.trim().orEmpty())
+            .putLong(KEY_LOCK_ACTIVITY_HEARTBEAT, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun heartbeatLockActivity(context: Context) {
+        val preferences = prefs(context)
+        if (!preferences.getBoolean(KEY_LOCK_ACTIVITY_ACTIVE, false)) return
+        preferences.edit()
+            .putBoolean(KEY_LOCK_ACTIVITY_RESUMED, true)
+            .putLong(KEY_LOCK_ACTIVITY_HEARTBEAT, System.currentTimeMillis())
             .apply()
     }
 
@@ -79,21 +113,38 @@ object LockPrefs {
             .putBoolean(KEY_LOCK_ACTIVITY_ACTIVE, false)
             .putBoolean(KEY_LOCK_ACTIVITY_RESUMED, false)
             .remove(KEY_LOCK_ACTIVITY_PACKAGE)
+            .remove(KEY_LOCK_ACTIVITY_HEARTBEAT)
             .apply()
     }
 
-    fun isLockActivityResumedFor(context: Context, packageName: String): Boolean {
+    fun isLockActivityAliveFor(context: Context, packageName: String): Boolean {
         val preferences = prefs(context)
-        return preferences.getBoolean(KEY_LOCK_ACTIVITY_ACTIVE, false) &&
-            preferences.getBoolean(KEY_LOCK_ACTIVITY_RESUMED, false) &&
-            preferences.getString(KEY_LOCK_ACTIVITY_PACKAGE, "") == packageName
+        if (!preferences.getBoolean(KEY_LOCK_ACTIVITY_ACTIVE, false)) return false
+        if (preferences.getString(KEY_LOCK_ACTIVITY_PACKAGE, "") != packageName) return false
+        val heartbeat = preferences.getLong(KEY_LOCK_ACTIVITY_HEARTBEAT, 0L)
+        if (heartbeat <= 0L || System.currentTimeMillis() - heartbeat > LOCK_ACTIVITY_HEARTBEAT_TIMEOUT_MS) {
+            preferences.edit()
+                .putBoolean(KEY_LOCK_ACTIVITY_ACTIVE, false)
+                .putBoolean(KEY_LOCK_ACTIVITY_RESUMED, false)
+                .remove(KEY_LOCK_ACTIVITY_PACKAGE)
+                .remove(KEY_LOCK_ACTIVITY_HEARTBEAT)
+                .apply()
+            return false
+        }
+        return true
     }
+
+    fun isLockActivityResumedFor(context: Context, packageName: String): Boolean =
+        isLockActivityAliveFor(context, packageName)
 
     fun clearAllLockState(context: Context) = prefs(context).edit().clear().apply()
 
     private fun clearAthanLock(context: Context) {
-        prefs(context).edit().putBoolean(KEY_ATHAN_LOCK_ACTIVE, false)
-            .remove(KEY_ACTIVE_PRAYER_NAME).remove(KEY_ATHAN_LOCK_STARTED_AT).apply()
+        prefs(context).edit()
+            .putBoolean(KEY_ATHAN_LOCK_ACTIVE, false)
+            .remove(KEY_ACTIVE_PRAYER_NAME)
+            .remove(KEY_ATHAN_LOCK_STARTED_AT)
+            .apply()
     }
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
