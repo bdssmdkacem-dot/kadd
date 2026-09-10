@@ -239,6 +239,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
   Future<void> _refreshOnResume() async {
     final appState = context.read<AppState>();
     try {
+      await appState.refreshCalendarState();
       await appState.checkUsageAccess();
       await appState.loadAvailableApps(forceRefresh: true);
     } catch (error, stack) {
