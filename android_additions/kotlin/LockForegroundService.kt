@@ -78,6 +78,11 @@ class LockForegroundService : Service() {
         if (foreground == packageName || foreground !in installed) return
         if (LockPrefs.isCurrentlyUnlocked(this, foreground)) return
 
+        // A lock screen may already be visible for this exact foreground app.
+        // Do not send another intent every 750 ms: doing so would trigger
+        // onNewIntent()/recreate() repeatedly and could interrupt verification.
+        if (LockPrefs.isLockActivityResumedFor(this, foreground)) return
+
         val lockIntent = Intent(this, LockActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
