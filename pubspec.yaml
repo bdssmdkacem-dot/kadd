@@ -2,7 +2,7 @@ name: kadd
 description: "كدّ — قفل التطبيقات بالمجهود وبالتزام الصلاة"
 publish_to: "none"
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ">=3.9.0 <4.0.0"
@@ -18,7 +18,7 @@ dependencies:
   shared_preferences: ^2.5.5
 
   # Fonts
-  google_fonts: ^6.3.3
+google_fonts: ^6.3.3
 
   # Camera
   camera: ^0.10.6
