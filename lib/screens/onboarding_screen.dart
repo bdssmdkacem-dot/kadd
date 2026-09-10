@@ -20,8 +20,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   static const _items = <_IntroItem>[
     _IntroItem(Icons.lock_outline, 'أنت من يحدد ما تريد تقليله', 'اختر التطبيقات التي تريد أن تتوقف عن فتحها بشكل تلقائي ومندفع.'),
     _IntroItem(Icons.directions_run, 'الوصول يحتاج مجهودًا', 'عندما تحاول فتح تطبيق مقفل، ينقلك كدّ إلى جلسة تمرين. عند إكمال الهدف تحصل على وقت فتح مؤقت.'),
-    _IntroItem(Icons.shield_outlined, 'بياناتك تبقى على هاتفك', 'اكتشاف التطبيقات، استخدام الهاتف، الكاميرا وبيانات الحركة تستخدم محليًا لتشغيل وظائف كدّ.'),
-    _IntroItem(Icons.tune, 'يمكنك تغيير كل شيء لاحقًا', 'الصعوبة، التطبيقات المقفلة، الصلاة والإعدادات قابلة للتعديل من داخل التطبيق.'),
+    _IntroItem(Icons.security_outlined, 'صلاحيات واضحة لوظائف محددة', 'وصول الاستخدام مطلوب لاكتشاف التطبيق المفتوح وتشغيل القفل. الكاميرا تُطلب فقط أثناء التمرين أو التحقق من السجادة، والمنبّهات الدقيقة تُستخدم فقط لقفل الصلاة في وقته.'),
+    _IntroItem(Icons.shield_outlined, 'المعالجة الأساسية محلية', 'قائمة التطبيقات، بيانات الاستخدام، صور الكاميرا وبيانات الحركة تُستخدم على الجهاز لتشغيل وظائف كدّ. كدّ لا يرفع هذه البيانات إلى خادم تابع له.'),
+    _IntroItem(Icons.tune, 'يمكنك تغيير كل شيء لاحقًا', 'بعد البداية يمكنك تعديل التطبيقات، الصعوبة، أوقات الصلاة والإعدادات. ابدأ باختيار التطبيقات التي تريد قفلها.'),
   ];
 
   @override
@@ -64,12 +65,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     itemBuilder: (_, index) {
                       final item = _items[index];
                       return Padding(
-                        padding: const EdgeInsets.fromLTRB(28, 48, 28, 16),
+                        padding: const EdgeInsets.fromLTRB(28, 40, 28, 16),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Image.asset('assets/icon/icon.png', width: 104, height: 104),
-                            const SizedBox(height: 26),
+                            Image.asset('assets/icon/icon.png', width: 96, height: 96),
+                            const SizedBox(height: 22),
                             Container(
                               width: 78,
                               height: 78,
@@ -80,10 +81,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               ),
                               child: Icon(item.icon, size: 34, color: AppColors.unlock),
                             ),
-                            const SizedBox(height: 24),
-                            Text(item.title, textAlign: TextAlign.center, style: AppTextStyles.kufi(size: 24)),
+                            const SizedBox(height: 22),
+                            Text(item.title, textAlign: TextAlign.center, style: AppTextStyles.kufi(size: 23)),
                             const SizedBox(height: 12),
-                            Text(item.body, textAlign: TextAlign.center, style: AppTextStyles.body(size: 14, color: AppColors.textDim)),
+                            KaddCard(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(item.body, textAlign: TextAlign.center, style: AppTextStyles.body(size: 13.5, color: AppColors.textDim)),
+                            ),
                           ],
                         ),
                       );
@@ -107,7 +111,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
                   child: Column(
                     children: [
-                      KaddPrimaryButton(label: _page == _items.length - 1 ? 'ابدأ استخدام كدّ' : 'التالي', onPressed: _next),
+                      KaddPrimaryButton(label: _page == _items.length - 1 ? 'ابدأ واختر التطبيقات' : 'التالي', onPressed: _next),
                       if (_page < _items.length - 1)
                         TextButton(onPressed: _finish, child: Text('تخطي', style: AppTextStyles.body(size: 12, color: AppColors.textFaint))),
                     ],
