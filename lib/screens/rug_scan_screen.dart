@@ -130,7 +130,10 @@ class _RugScanScreenState extends State<RugScanScreen> {
     HapticFeedback.heavyImpact();
     setState(() => _showSuccess = true);
     try {
-      await context.read<AppState>().onRugVerified();
+      // Pass the requested prayer through to the native validation layer.
+      // Native state must still contain the same active prayer lock before
+      // any unlock is granted; a stale screen can therefore never unlock it.
+      await context.read<AppState>().onRugVerified(widget.prayer);
       if (!mounted) return;
       await Future<void>.delayed(const Duration(milliseconds: 700));
       if (mounted) Navigator.pop(context);
@@ -141,7 +144,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
         _confidences.clear();
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم التحقق بصريًا لكن تعذر فتح التطبيقات. حاول مرة أخرى.')),
+        const SnackBar(content: Text('انتهت صلاحية قفل هذه الصلاة أو تغيّرت الصلاة النشطة. لم يتم فتح التطبيقات.')),
       );
     }
   }
@@ -178,161 +181,63 @@ class _RugScanScreenState extends State<RugScanScreen> {
                           const SizedBox(height: 12),
                           Text(_error!, textAlign: TextAlign.center, style: AppTextStyles.body(size: 13)),
                           const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _initialize,
-                            child: const Text('إعادة المحاولة'),
-                          ),
+                          KaddPrimaryButton(label: 'إغلاق', onPressed: () => Navigator.pop(context)),
                         ],
                       )
                     : const CircularProgressIndicator(color: AppColors.unlock),
               ),
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(100),
-                      ),
-                      child: Text('🕌 ${widget.prayer.labelAr}', style: AppTextStyles.kufi(size: 12, color: AppColors.unlock)),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: CircleAvatar(
-                        radius: 15,
-                        backgroundColor: Colors.black.withOpacity(0.4),
-                        child: const Icon(Icons.close, size: 15, color: AppColors.textDim),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_controller != null && _controller!.value.isInitialized)
-              Center(
-                child: Container(
-                  width: 220,
-                  height: 290,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.unlock, width: 2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            Positioned(
-              top: 88,
-              left: 18,
-              right: 18,
-              child: KaddCard(
-                backgroundColor: Colors.black.withOpacity(0.55),
-                borderColor: AppColors.unlock.withOpacity(0.35),
-                child: Column(
-                  children: [
-                    Text(
-                      'تحقق متعدد الخطوات',
-                      style: AppTextStyles.kufi(size: 14, color: AppColors.unlock),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      _steps[currentStep],
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.body(size: 11.5, color: AppColors.textDim),
-                    ),
-                    const SizedBox(height: 9),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List<Widget>.generate(
-                        RugVerificationPolicy.requiredCaptures,
-                        (index) => Container(
-                          width: 9,
-                          height: 9,
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: index < step ? AppColors.unlock : AppColors.textFaint,
+            if (!_initializing && _controller != null && _controller!.value.isInitialized)
+              Positioned.fill(
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed: _verifying || _showSuccess ? null : () => Navigator.pop(context),
+                              icon: const Icon(Icons.close, color: Colors.white),
+                            ),
+                            const Spacer(),
+                            Text('تحقق السجادة', style: AppTextStyles.kufi(size: 17, color: Colors.white)),
+                          ],
+                        ),
+                        const Spacer(),
+                        KaddCard(
+                          color: Colors.black.withOpacity(0.62),
+                          child: Column(
+                            children: [
+                              Text(
+                                _showSuccess ? 'تم التحقق' : _steps[currentStep],
+                                textAlign: TextAlign.center,
+                                style: AppTextStyles.kufi(size: 15, color: Colors.white),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'الصلاة: ${widget.prayer.arabicName}',
+                                style: AppTextStyles.body(size: 12, color: Colors.white70),
+                              ),
+                              const SizedBox(height: 12),
+                              if (_showSuccess)
+                                const Icon(Icons.verified_rounded, size: 44, color: AppColors.unlock)
+                              else ...[
+                                LinearProgressIndicator(
+                                  value: _confidences.length / RugVerificationPolicy.requiredCaptures,
+                                  backgroundColor: Colors.white24,
+                                  valueColor: const AlwaysStoppedAnimation<Color>(AppColors.unlock),
+                                ),
+                                const SizedBox(height: 10),
+                                KaddPrimaryButton(
+                                  label: _verifying ? 'جارٍ التحقق…' : 'التقاط الصورة',
+                                  onPressed: _verifying ? null : _captureStep,
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 120,
-              left: 18,
-              right: 18,
-              child: Column(
-                children: [
-                  if (_confidences.isNotEmpty)
-                    Text(
-                      'الثقة الحالية: ${(_confidences.last * 100).toStringAsFixed(0)}٪',
-                      style: AppTextStyles.body(size: 12, weight: FontWeight.w600, color: _confidences.last >= RugVerificationPolicy.perCaptureFloor ? AppColors.unlock : AppColors.signal),
-                    ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.45),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'لن تُفتح التطبيقات إلا بعد نجاح الصور الثلاث واتساق نتائجها.',
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.body(size: 12.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_controller != null && _controller!.value.isInitialized)
-              Positioned(
-                bottom: 40,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: GestureDetector(
-                    onTap: _captureStep,
-                    child: Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _verifying ? AppColors.textFaint : AppColors.signal,
-                      ),
-                      child: _verifying
-                          ? const Padding(
-                              padding: EdgeInsets.all(18),
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.camera_alt, color: Colors.white),
-                    ),
-                  ),
-                ),
-              ),
-            if (_showSuccess)
-              Container(
-                color: AppColors.ink.withOpacity(0.85),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 100,
-                        height: 100,
-                        alignment: Alignment.center,
-                        decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.unlock),
-                        child: const Icon(Icons.check, size: 56, color: Color(0xFF1A1F0A)),
-                      ),
-                      const SizedBox(height: 16),
-                      Text('تقبّل الله 🤲', style: AppTextStyles.kufi(size: 20)),
-                      const SizedBox(height: 4),
-                      Text('تطبيقاتك فتحت', style: AppTextStyles.body(size: 13, color: AppColors.textDim)),
-                    ],
                   ),
                 ),
               ),
