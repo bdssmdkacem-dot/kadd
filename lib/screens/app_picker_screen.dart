@@ -21,7 +21,9 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refreshApps(showErrors: false);
+      if (mounted) {
+        _refreshApps(showErrors: false);
+      }
     });
   }
 
@@ -33,7 +35,9 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) _refreshApps(showErrors: false);
+    if (state == AppLifecycleState.resumed && mounted) {
+      _refreshApps(showErrors: false);
+    }
   }
 
   Future<void> _refreshApps({required bool showErrors}) async {
@@ -47,7 +51,9 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
     }
   }
 
-  Future<void> _openUsageAccessSettings() async => context.read<AppState>().requestUsageAccess();
+  Future<void> _openUsageAccessSettings() async {
+    await context.read<AppState>().requestUsageAccess();
+  }
 
   Future<void> _setLocked(AppState state, String packageName, bool locked) async {
     if (_busyPackage != null) return;
@@ -57,10 +63,15 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
         await _openUsageAccessSettings();
         return;
       }
-      if (locked) await state.addLockedApp(packageName);
-      else await state.removeLockedApp(packageName);
+      if (locked) {
+        await state.addLockedApp(packageName);
+      } else {
+        await state.removeLockedApp(packageName);
+      }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تحديث القفل: $error')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تحديث القفل: $error')));
+      }
     } finally {
       if (mounted) setState(() => _busyPackage = null);
     }
