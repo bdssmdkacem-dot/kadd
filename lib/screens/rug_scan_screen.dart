@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -75,8 +77,10 @@ class _RugScanScreenState extends State<RugScanScreen> {
     }
 
     setState(() => _capturing = true);
+    String? imagePath;
     try {
       final file = await controller.takePicture();
+      imagePath = file.path;
       final confidence = await _classifier.classify(file.path);
       if (!mounted) return;
       setState(() => _confidences.add(confidence));
@@ -91,6 +95,16 @@ class _RugScanScreenState extends State<RugScanScreen> {
         SnackBar(content: Text('فشل التحقق: $error')),
       );
     } finally {
+      // Camera.takePicture() creates a temporary JPEG on local storage.
+      // Kadd only needs the image long enough for on-device classification;
+      // never retain captured prayer-rug images after each verification step.
+      if (imagePath != null) {
+        try {
+          await File(imagePath!).delete();
+        } catch (_) {
+          // Best-effort cleanup; a failed deletion must not break unlocking.
+        }
+      }
       if (mounted) setState(() => _capturing = false);
     }
   }
@@ -134,6 +148,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
   void dispose() {
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _controller?.dispose();
+    _classifier.dispose();
     super.dispose();
   }
 
