@@ -54,7 +54,7 @@ object LockPrefs {
         val editor = prefs(context).edit()
         prefs(context).all.keys
             .filter { it.startsWith("unlock_until_") }
-            .forEach(editor::remove)
+            .forEach { key -> editor.remove(key) }
         editor
             .putBoolean(KEY_ATHAN_LOCK_ACTIVE, true)
             .putString(KEY_ACTIVE_PRAYER_NAME, prayerName)
