@@ -104,9 +104,6 @@ class _RugScanScreenState extends State<RugScanScreen> {
         SnackBar(content: Text('فشل التحقق: $error')),
       );
     } finally {
-      // Camera.takePicture() creates a temporary JPEG on local storage.
-      // Kadd only needs the image long enough for on-device classification;
-      // never retain captured prayer-rug images after each verification step.
       if (imagePath != null) {
         try {
           await File(imagePath).delete();
