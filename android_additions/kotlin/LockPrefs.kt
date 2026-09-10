@@ -37,8 +37,9 @@ object LockPrefs {
     fun isCurrentlyUnlocked(context: Context, packageName: String): Boolean {
         val key = "unlock_until_$packageName"
         val until = prefs(context).getLong(key, 0L)
-        val active = !isAthanLockActive(context) && System.currentTimeMillis() < until
-        if (!active && until != 0L && !isAthanLockActive(context)) {
+        val prayerLockActive = isAthanLockActive(context)
+        val active = !prayerLockActive && System.currentTimeMillis() < until
+        if (!active && until != 0L && !prayerLockActive) {
             prefs(context).edit().remove(key).apply()
         }
         return active
