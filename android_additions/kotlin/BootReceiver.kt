@@ -4,18 +4,22 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 
-/** Restores all persisted native enforcement state after Android reboot. */
+/** Restores enforcement and rebuilds prayer alarms after lifecycle/clock events. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_TIMEZONE_CHANGED,
+            Intent.ACTION_TIME_CHANGED,
+            Intent.ACTION_DATE_CHANGED -> {
+                AthanAlarmScheduler.restore(context)
+                AthanAlarmScheduler.refreshTodayAndTomorrow(context)
 
-        // AlarmManager clears alarms on reboot. The scheduler keeps the next
-        // known prayer epochs locally, so no network or Flutter startup is
-        // required here to restore a still-future prayer lock.
-        AthanAlarmScheduler.restore(context)
-
-        if (LockPrefs.getLockedPackages(context).isNotEmpty() || LockPrefs.isAthanLockActive(context)) {
-            LockForegroundService.ensureRunning(context)
+                if (LockPrefs.getLockedPackages(context).isNotEmpty() || LockPrefs.isAthanLockActive(context)) {
+                    LockForegroundService.ensureRunning(context)
+                }
+            }
         }
     }
 }
