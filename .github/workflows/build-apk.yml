@@ -17,21 +17,24 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Gradle's fallback signing configuration resolves the debug keystore
+      # from the Android SDK/user configuration directory. On GitHub-hosted
+      # runners this is $ANDROID_USER_HOME/.android, not $HOME/.android.
       - name: Provision CI debug keystore
         run: |
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
-          test -s "$HOME/.android/debug.keystore"
+          export ANDROID_USER_HOME="${ANDROID_USER_HOME:-$HOME/.config"
+          mkdir -p "$ANDROID_USER_HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$ANDROID_USER_HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          test -s "$ANDROID_USER_HOME/.android/debug.keystore"
+          echo "ANDROID_USER_HOME=$ANDROID_USER_HOME" >> "$GITHUB_ENV"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -67,9 +70,6 @@ jobs:
       - name: Flutter tests
         run: flutter test
 
-      # Keep verification builds independent from production credentials.
-      # Real Play signing is intentionally supplied only by CI secrets when
-      # configured; otherwise android/app/build.gradle uses the CI debug key.
       - name: Configure optional release signing
         env:
           KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
@@ -84,8 +84,8 @@ jobs:
 
       - name: Verify CI signing key
         run: |
-          test -s "$HOME/.android/debug.keystore"
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+          test -s "$ANDROID_USER_HOME/.android/debug.keystore"
+          keytool -list -keystore "$ANDROID_USER_HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
 
       - name: Build release APK
         env:
