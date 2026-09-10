@@ -7,6 +7,7 @@ plugins {
 android {
     namespace "com.comptaflow.kadd"
     compileSdk 35
+    ndkVersion "28.2.13676358"
 
     defaultConfig {
         applicationId "com.comptaflow.kadd"
@@ -15,6 +16,7 @@ android {
         versionCode flutter.versionCode
         versionName flutter.versionName
         manifestPlaceholders = [
+            applicationName: "io.flutter.app.FlutterApplication",
             KADD_ADMOB_APP_ID: System.getenv('KADD_ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713'
         ]
     }
@@ -30,8 +32,6 @@ android {
                 keyAlias System.getenv('KADD_RELEASE_KEY_ALIAS') ?: ''
                 keyPassword System.getenv('KADD_RELEASE_KEY_PASSWORD') ?: ''
             } else {
-                // A SigningConfig cannot reference signingConfig(); copy the
-                // debug signing values explicitly for local/verification builds.
                 storeFile signingConfigs.debug.storeFile
                 storePassword signingConfigs.debug.storePassword
                 keyAlias signingConfigs.debug.keyAlias
