@@ -350,6 +350,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> onRepsVerified(LockedApp app) async {
+    await refreshCalendarState();
     final reps = app.repsFor(difficulty);
     await _usageService.grantTemporaryUnlock(app.packageName, app.minutesGranted);
     repsThisWeek += reps;
@@ -371,11 +372,47 @@ class AppState extends ChangeNotifier {
   /// Grants the prayer unlock only when the native side confirms that the
   /// exact prayer being verified is still the active prayer lock.
   Future<void> onRugVerified(PrayerName prayer) async {
+    await refreshCalendarState();
     await _usageService.grantAthanUnlock(prayer);
     prayerUnlocks += 1;
     _recordActivityToday();
     notifyListeners();
     await _persistStats();
+  }
+
+  /// Reconciles in-memory daily/weekly counters with the current calendar.
+  /// This is safe to call whenever the app returns from background and keeps
+  /// a long-running app from carrying yesterday's daily or last-week's count.
+  Future<void> refreshCalendarState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    final todayKey = _dayKey(now);
+    final weekKey = _weekKey(now);
+    var changed = false;
+
+    if (prefs.getString('statsDayKey') != todayKey) {
+      minutesEarnedToday = 0;
+      await prefs.setInt('minutesEarnedToday', 0);
+      await prefs.setString('statsDayKey', todayKey);
+      changed = true;
+    }
+
+    if (prefs.getString('repsWeekKey') != weekKey) {
+      repsThisWeek = 0;
+      await prefs.setInt('repsThisWeek', 0);
+      await prefs.setString('repsWeekKey', weekKey);
+      changed = true;
+    }
+
+    final beforePrune = _activityDates.length;
+    _pruneActivityDates();
+    _rebuildStreak();
+    if (_activityDates.length != beforePrune) {
+      await prefs.setStringList('activityDates', _activityDates.toList()..sort());
+      changed = true;
+    }
+
+    if (changed) notifyListeners();
   }
 
   void _recordActivityToday() {
