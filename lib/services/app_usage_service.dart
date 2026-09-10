@@ -58,6 +58,11 @@ class AppUsageService {
     }
   }
 
+  /// Explicitly finishes the native lock activity after a verified unlock.
+  /// This is stronger than popping Flutter routes: the foreground enforcement
+  /// activity itself must end before the user can return to the target app.
+  Future<void> finishLockActivity() => _channel.invokeMethod('finishLockActivity');
+
   Future<void> scheduleAthanLocks(
     List<PrayerSetting> enabledPrayers,
     int delayMinutes, {
