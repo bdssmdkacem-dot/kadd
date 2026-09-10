@@ -10,11 +10,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-/**
- * Full-screen verification activity launched by the native lock service.
- * Back navigation is deliberately disabled: leaving this activity must not
- * become an alternate path around the verification requirement.
- */
+/** Full-screen verification activity launched by the native lock service. */
 class LockActivity : FlutterActivity() {
     private val channelName = "com.comptaflow.kadd/lock"
     private val handler = Handler(Looper.getMainLooper())
@@ -27,6 +23,7 @@ class LockActivity : FlutterActivity() {
                 finishAndRemoveTask()
                 return
             }
+            LockPrefs.heartbeatLockActivity(this@LockActivity)
             handler.postDelayed(this, COMPLETION_CHECK_MS)
         }
     }
@@ -34,7 +31,6 @@ class LockActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prayerVerification = LockPrefs.isAthanLockActive(this)
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -78,7 +74,6 @@ class LockActivity : FlutterActivity() {
         super.onDestroy()
     }
 
-    /** Refresh the lock route when a new lock intent reaches an existing activity. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -86,19 +81,13 @@ class LockActivity : FlutterActivity() {
         recreate()
     }
 
-    /** Do not allow Android Back to dismiss an active verification screen. */
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         // Verification must succeed before the user can leave this screen.
     }
 
     private fun verificationCompleted(): Boolean {
-        if (prayerVerification) {
-            // Prayer verification is complete only after the native prayer lock
-            // has actually been cleared by a successful verification.
-            return !LockPrefs.isAthanLockActive(this)
-        }
-
+        if (prayerVerification) return !LockPrefs.isAthanLockActive(this)
         val packageName = intent.getStringExtra("packageName")?.trim().orEmpty()
         if (packageName.isEmpty()) return false
         return LockPrefs.isCurrentlyUnlocked(this, packageName)
