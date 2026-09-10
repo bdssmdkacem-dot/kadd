@@ -7,16 +7,21 @@
 - [x] CI produces an installable release APK.
 - [ ] Configure a real Play upload key outside the repository.
 - [ ] Configure Play App Signing.
-- [ ] Build and validate a signed AAB.
+- [ ] Build and validate a signed AAB with the production upload key.
 - [ ] Keep the upload keystore and passwords out of Git.
+
+> The CI debug-key fallback is for build validation only. A successful CI build is not proof of Play production signing.
 
 ## B. AdMob
 
 - [ ] Create the production AdMob app and ad units.
-- [ ] Replace the Google test application ID in `android/app/src/main/AndroidManifest.xml`.
-- [ ] Replace the test banner/interstitial IDs in `lib/services/ads_service.dart`.
+- [x] CI accepts the production AdMob application ID through `KADD_ADMOB_APP_ID`.
+- [x] CI accepts production banner/interstitial IDs through `KADD_ADMOB_BANNER_ID` and `KADD_ADMOB_INTERSTITIAL_ID`.
+- [ ] Configure the production AdMob secrets for the final release workflow.
 - [ ] Verify UMP consent behavior for applicable regions.
-- [ ] Never ship a production release with Google's test IDs.
+- [ ] Never submit a production release with Google's test IDs.
+
+The existing ad behavior must remain unchanged; production configuration supplies identifiers only.
 
 ## C. Sensitive permissions
 
@@ -81,3 +86,7 @@ Kadd uses `specialUse` because its enforcement service does not map cleanly to t
 ## G. Current known release blocker
 
 The prayer-rug verifier currently uses generic ML Kit image labels with a conservative multi-capture policy. It should not be advertised as high-confidence prayer-rug authentication until a validated dedicated model or stronger verification design is shipped.
+
+## H. Release runbook
+
+See `docs/RELEASE_RUNBOOK.md` for the complete production configuration, signing, Play declaration, privacy, and final regression sequence.
