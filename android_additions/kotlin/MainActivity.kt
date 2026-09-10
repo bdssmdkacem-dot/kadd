@@ -19,6 +19,7 @@ import java.util.Locale
 
 class MainActivity : FlutterActivity() {
     private val channelName = "com.comptaflow.kadd/lock"
+    private val maxExerciseUnlockMinutes = 180
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -59,8 +60,11 @@ class MainActivity : FlutterActivity() {
                     val packageName = call.argument<String>("packageName")?.trim()
                     val minutes = call.argument<Int>("minutes")
                     when {
-                        packageName.isNullOrEmpty() || minutes == null || minutes <= 0 -> {
-                            result.error("INVALID_UNLOCK", "packageName and positive minutes are required", null)
+                        packageName.isNullOrEmpty() || minutes == null || minutes <= 0 || minutes > maxExerciseUnlockMinutes -> {
+                            result.error("INVALID_UNLOCK", "packageName and minutes between 1 and $maxExerciseUnlockMinutes are required", null)
+                        }
+                        !LockPrefs.getLockedPackages(this).contains(packageName) -> {
+                            result.error("APP_NOT_LOCKED", "The requested package is not currently configured as locked", null)
                         }
                         LockPrefs.isAthanLockActive(this) -> {
                             result.error("PRAYER_LOCK_ACTIVE", "Exercise unlock is unavailable during the active prayer lock", null)
