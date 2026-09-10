@@ -14,17 +14,28 @@ android {
         targetSdk 35
         versionCode flutter.versionCode
         versionName flutter.versionName
+        manifestPlaceholders = [
+            KADD_ADMOB_APP_ID: System.getenv('KADD_ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713'
+        ]
     }
 
-    // The APK distributed from GitHub Actions must be signed. Until a
-    // production keystore is configured, use Android's generated debug key
-    // for the release artifact so Android devices can install the APK.
+    // Production signing is supplied by CI/secret infrastructure only.
+    // Local and ordinary verification builds continue using the generated
+    // Android debug key so no signing secret is committed to the repository.
     signingConfigs {
         release {
-            storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')
-            storePassword 'android'
-            keyAlias 'AndroidDebugKey'
-            keyPassword 'android'
+            def releaseKeystore = System.getenv('KADD_RELEASE_KEYSTORE')
+            if (releaseKeystore) {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv('KADD_RELEASE_STORE_PASSWORD') ?: ''
+                keyAlias System.getenv('KADD_RELEASE_KEY_ALIAS') ?: ''
+                keyPassword System.getenv('KADD_RELEASE_KEY_PASSWORD') ?: ''
+            } else {
+                storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')
+                storePassword 'android'
+                keyAlias 'AndroidDebugKey'
+                keyPassword 'android'
+            }
         }
     }
 
