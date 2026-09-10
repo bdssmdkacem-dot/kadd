@@ -2,16 +2,18 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-/// Ad unit IDs. These are Google's official *test* IDs — they always serve
-/// a clearly-labelled test ad and are safe to ship in debug builds, but
-/// they never earn real revenue. Before publishing, create a real AdMob
-/// account + ad units at https://apps.admob.com and swap these three
-/// values (see PLAYSTORE_CHECKLIST.md § AdMob for the full walkthrough).
-/// The app ID itself lives in android_additions/manifest_application.xml
-/// and needs the same swap.
+/// AdMob identifiers are build-time configurable. The repository keeps
+/// Google's official test IDs by default; production CI can inject real IDs
+/// without committing them to source control.
 class AdUnitIds {
-  static const banner = kAndroidBannerTestId;
-  static const interstitial = kAndroidInterstitialTestId;
+  static const banner = String.fromEnvironment(
+    'KADD_ADMOB_BANNER_ID',
+    defaultValue: kAndroidBannerTestId,
+  );
+  static const interstitial = String.fromEnvironment(
+    'KADD_ADMOB_INTERSTITIAL_ID',
+    defaultValue: kAndroidInterstitialTestId,
+  );
 
   static const kAndroidBannerTestId = 'ca-app-pub-3940256099942544/6300978111';
   static const kAndroidInterstitialTestId = 'ca-app-pub-3940256099942544/1033173712';
@@ -30,16 +32,11 @@ class AdsService {
   InterstitialAd? _interstitialAd;
   bool _loadingInterstitial = false;
 
-  /// Simple frequency cap so an interstitial doesn't fire on every single
-  /// unlock — that would make the "earn your unlock" moment feel punished
-  /// rather than rewarded. Every 3rd successful unlock shows one instead.
+  /// Existing frequency cap: every 3rd successful unlock shows an ad when
+  /// one is ready. This behavior is intentionally unchanged.
   int _unlocksSinceLastAd = 0;
   static const _unlocksBetweenAds = 3;
 
-  /// Call once, early in main() before runApp. Requests EU/UK consent
-  /// first (required by AdMob policy — ads must not be requested with
-  /// personalization before consent is resolved for those users), then
-  /// initializes the Mobile Ads SDK and preloads the first interstitial.
   Future<void> init() async {
     if (_initialized) return;
     await _requestConsent();
@@ -65,17 +62,11 @@ class AdsService {
         if (!completer.isCompleted) completer.complete();
       },
       (FormError error) {
-        // Fail open: if the consent info update itself fails (e.g. no
-        // network on first launch), don't block the whole app on it —
-        // MobileAds.instance.initialize() will just proceed with
-        // non-personalized defaults where required.
         debugPrint('AdsService: consent info update failed: ${error.message}');
         if (!completer.isCompleted) completer.complete();
       },
     );
 
-    // Safety timeout — never let a slow/broken consent network call hang
-    // app startup indefinitely.
     return completer.future.timeout(const Duration(seconds: 8), onTimeout: () {});
   }
 
@@ -121,16 +112,11 @@ class AdsService {
   }
 
   /// Call after a successful unlock (reps verified or prayer-rug verified).
-  /// Respects the frequency cap above — most calls are a no-op besides the
-  /// counter increment.
   void maybeShowInterstitialAfterUnlock() {
     _unlocksSinceLastAd++;
     if (_unlocksSinceLastAd < _unlocksBetweenAds) return;
     final ad = _interstitialAd;
     if (ad == null) {
-      // Not ready this time (still loading, or previous load failed) —
-      // don't reset the counter, so we try again on the next unlock
-      // instead of silently skipping this "turn".
       _loadInterstitial();
       return;
     }
@@ -139,7 +125,7 @@ class AdsService {
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
         _interstitialAd = null;
-        _loadInterstitial(); // preload the next one
+        _loadInterstitial();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         ad.dispose();
