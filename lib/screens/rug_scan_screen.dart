@@ -113,6 +113,7 @@ class _RugScanScreenState extends State<RugScanScreen> {
     }
 
     HapticFeedback.heavyImpact();
+    if (!mounted) return;
     setState(() => _showSuccess = true);
     try {
       await context.read<AppState>().onRugVerified(widget.prayer);
@@ -176,8 +177,13 @@ class _RugScanScreenState extends State<RugScanScreen> {
                         ],
                       ),
                       const Spacer(),
-                      KaddCard(
-                        color: Colors.black.withValues(alpha: 0.62),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.62),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                         child: Column(
                           children: [
                             Text(
