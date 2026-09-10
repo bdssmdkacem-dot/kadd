@@ -125,10 +125,19 @@ class _LockRepEntry extends StatelessWidget {
         }
 
         final requested = packageName?.trim();
-        final app = requested == null || requested.isEmpty
-            ? null
-            : state.apps.cast<dynamic>().where((item) => item.packageName == requested).firstOrNull;
+        if (requested == null || requested.isEmpty) {
+          return const _InvalidLockEntry();
+        }
 
+        LockedAppCandidate? candidate;
+        for (final item in state.apps) {
+          if (item.packageName == requested) {
+            candidate = LockedAppCandidate(item);
+            break;
+          }
+        }
+
+        final app = candidate?.app;
         if (app == null || !app.isEnabled) {
           return const _InvalidLockEntry();
         }
@@ -137,6 +146,11 @@ class _LockRepEntry extends StatelessWidget {
       },
     );
   }
+}
+
+class LockedAppCandidate {
+  final dynamic app;
+  LockedAppCandidate(this.app);
 }
 
 class _InvalidLockEntry extends StatelessWidget {
