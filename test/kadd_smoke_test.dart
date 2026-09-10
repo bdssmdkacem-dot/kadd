@@ -26,10 +26,11 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.byType(NavigationBar), findsOneWidget);
-    final navigationBar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    final navigationBar =
+        tester.widget<NavigationBar>(find.byType(NavigationBar));
     expect(navigationBar.destinations.length, 4);
     expect(find.text('الرئيسية'), findsOneWidget);
     expect(find.text('التطبيقات'), findsOneWidget);
@@ -38,7 +39,7 @@ void main() {
     expect(navigationBar.selectedIndex, 0);
 
     await tester.tap(find.text('الصلاة'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
@@ -47,7 +48,7 @@ void main() {
     expect(find.text('إعدادات الصلاة'), findsOneWidget);
 
     await tester.tap(find.text('الرئيسية'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
