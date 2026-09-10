@@ -26,6 +26,21 @@ class LockActivity : FlutterActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        LockPrefs.markLockActivityResumed(this, intent.getStringExtra("packageName"))
+    }
+
+    override fun onPause() {
+        LockPrefs.markLockActivityPaused(this)
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        LockPrefs.markLockActivityDestroyed(this)
+        super.onDestroy()
+    }
+
     /** Refresh the lock route when a new lock intent reaches an existing activity. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
