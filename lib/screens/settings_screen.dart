@@ -7,6 +7,7 @@ import '../widgets/app_icon.dart';
 import '../widgets/kadd_background.dart';
 import '../widgets/kadd_card.dart';
 import 'app_picker_screen.dart';
+import 'privacy_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -172,6 +173,40 @@ class SettingsScreen extends StatelessWidget {
                       await state.checkUsageAccess();
                     }),
                   ]),
+                ),
+                const SizedBox(height: 12),
+                KaddCard(
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.unlock),
+                    title: Text('الخصوصية والبيانات', style: AppTextStyles.body(size: 13.5)),
+                    subtitle: Text('كيف يعالج كدّ الكاميرا والاستخدام ومعلومات الإعلانات', style: AppTextStyles.body(size: 10.5, color: AppColors.textFaint)),
+                    trailing: const Icon(Icons.chevron_left, color: AppColors.textFaint),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyScreen())),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                KaddCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('التشخيص', style: AppTextStyles.kufi(size: 13)),
+                      const SizedBox(height: 6),
+                      Text('المختار: ${state.apps.where((a) => a.isEnabled).length} تطبيق • المكتشف: ${state.availableApps.length}', style: AppTextStyles.body(size: 11.5, color: AppColors.textDim)),
+                      const SizedBox(height: 3),
+                      Text('Usage Access: ${state.hasUsageAccess ? 'مفعّل' : 'غير مفعّل'}', style: AppTextStyles.body(size: 11, color: state.hasUsageAccess ? AppColors.unlock : AppColors.signal)),
+                      if (state.appDiscoveryDiagnostics.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text('Launcher: ${state.appDiscoveryDiagnostics['launcherCount'] ?? 0} • Installed: ${state.appDiscoveryDiagnostics['installedCount'] ?? 0} • Launchable: ${state.appDiscoveryDiagnostics['launchableCount'] ?? 0}', style: AppTextStyles.body(size: 10.5, color: AppColors.textFaint)),
+                      ],
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: state.loadingAvailableApps ? null : () => state.loadAvailableApps(forceRefresh: true),
+                        icon: const Icon(Icons.refresh, size: 17),
+                        label: const Text('إعادة فحص التطبيقات'),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 KaddCard(
