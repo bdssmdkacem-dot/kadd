@@ -20,10 +20,10 @@ class AppUsageSummary {
   AppUsageSummary({this.reps = 0, this.minutes = 0, this.unlocks = 0, this.lastUnlockDate});
 
   factory AppUsageSummary.fromJson(Map<String, dynamic> json) => AppUsageSummary(
-        reps: (json['reps'] as num?)?.toInt().clamp(0, 100000000) ?? 0,
-        minutes: (json['minutes'] as num?)?.toInt().clamp(0, 100000000) ?? 0,
-        unlocks: (json['unlocks'] as num?)?.toInt().clamp(0, 100000000) ?? 0,
-        lastUnlockDate: json['lastUnlockDate'] is String ? json['lastUnlockDate'] as String : null,
+        reps: _safeInt(json['reps'], 0),
+        minutes: _safeInt(json['minutes'], 0),
+        unlocks: _safeInt(json['unlocks'], 0),
+        lastUnlockDate: json['lastUnlockDate'] is String && _isDayKey(json['lastUnlockDate'] as String) ? json['lastUnlockDate'] as String : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -32,6 +32,18 @@ class AppUsageSummary {
         'unlocks': unlocks,
         if (lastUnlockDate != null) 'lastUnlockDate': lastUnlockDate,
       };
+
+  static int _safeInt(dynamic value, int fallback) {
+    final parsed = value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+    return (parsed ?? fallback).clamp(0, 100000000).toInt();
+  }
+
+  static bool _isDayKey(String value) {
+    final parsed = DateTime.tryParse(value);
+    if (parsed == null) return false;
+    final normalized = '${parsed.year.toString().padLeft(4, '0')}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+    return normalized == value;
+  }
 }
 
 class AppState extends ChangeNotifier {
@@ -51,6 +63,8 @@ class AppState extends ChangeNotifier {
   final List<bool> last7Days = List.filled(7, false);
   final Set<String> _activityDates = <String>{};
   final Map<String, AppUsageSummary> _appUsage = <String, AppUsageSummary>{};
+  final Set<String> _activeUnlockOperations = <String>{};
+  final Set<String> _activePrayerUnlockOperations = <String>{};
 
   Map<String, AppUsageSummary> get appUsageHistory => Map.unmodifiable(_appUsage);
 
@@ -133,9 +147,7 @@ class AppState extends ChangeNotifier {
       Object? lastError;
       for (var attempt = 0; attempt < 3; attempt++) {
         try {
-          availableApps = await _installedAppsService.getLaunchableApps(
-            forceRefresh: forceRefresh || attempt > 0,
-          );
+          availableApps = await _installedAppsService.getLaunchableApps(forceRefresh: forceRefresh || attempt > 0);
           lastError = null;
           if (availableApps.isNotEmpty) break;
         } catch (e) {
@@ -147,10 +159,6 @@ class AppState extends ChangeNotifier {
         ..clear()
         ..addEntries(availableApps.map((info) => MapEntry(info.packageName, info)));
 
-      // Reconcile Flutter's persisted configuration with Android's current
-      // launchable-app inventory, but only after a successful non-empty
-      // discovery. An empty result must never erase configuration after a
-      // transient OEM/package-manager failure.
       if (availableApps.isNotEmpty) {
         final installedPackages = availableApps.map((a) => a.packageName).toSet();
         final before = apps.length;
@@ -225,17 +233,17 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     onboardingComplete = prefs.getBool('onboardingComplete') ?? false;
     final difficultyIndex = prefs.getInt('difficulty') ?? Difficulty.medium.index;
-    difficulty = Difficulty.values[difficultyIndex.clamp(0, Difficulty.values.length - 1)];
-    delayMinutesAfterAthan = (prefs.getInt('delayMinutes') ?? 5).clamp(0, 60);
-    repsThisWeek = prefs.getInt('repsThisWeek') ?? 0;
-    totalReps = prefs.getInt('totalReps') ?? 0;
-    totalMinutesEarned = prefs.getInt('totalMinutesEarned') ?? 0;
-    prayerUnlocks = prefs.getInt('prayerUnlocks') ?? 0;
+    difficulty = Difficulty.values[difficultyIndex.clamp(0, Difficulty.values.length - 1).toInt()];
+    delayMinutesAfterAthan = (prefs.getInt('delayMinutes') ?? 5).clamp(0, 60).toInt();
+    repsThisWeek = _prefInt(prefs, 'repsThisWeek');
+    totalReps = _prefInt(prefs, 'totalReps');
+    totalMinutesEarned = _prefInt(prefs, 'totalMinutesEarned');
+    prayerUnlocks = _prefInt(prefs, 'prayerUnlocks');
 
     final weekKey = _weekKey(DateTime.now());
     if (prefs.getString('repsWeekKey') != weekKey) repsThisWeek = 0;
     final todayKey = _dayKey(DateTime.now());
-    minutesEarnedToday = prefs.getString('statsDayKey') == todayKey ? (prefs.getInt('minutesEarnedToday') ?? 0) : 0;
+    minutesEarnedToday = prefs.getString('statsDayKey') == todayKey ? _prefInt(prefs, 'minutesEarnedToday') : 0;
 
     _activityDates
       ..clear()
@@ -274,6 +282,8 @@ class AppState extends ChangeNotifier {
     if (enabledPrayerNames != null) for (final p in prayers) p.enabled = enabledPrayerNames.contains(p.name.name);
   }
 
+  int _prefInt(SharedPreferences prefs, String key) => (prefs.getInt(key) ?? 0).clamp(0, 1000000000).toInt();
+
   Future<void> _persistApps() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('lockedApps', jsonEncode(apps.map((a) => a.toJson()).toList()));
@@ -307,6 +317,8 @@ class AppState extends ChangeNotifier {
     prayerUnlocks = 0;
     _activityDates.clear();
     _appUsage.clear();
+    _activeUnlockOperations.clear();
+    _activePrayerUnlockOperations.clear();
     onboardingComplete = false;
     await _usageService.syncLockedPackages(const []);
     notifyListeners();
@@ -352,53 +364,74 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> togglePrayer(PrayerSetting p, bool value) async {
+    final previous = p.enabled;
     p.enabled = value;
     notifyListeners();
-    await _persistEnabledPrayers();
-    await refreshPrayerTimes();
+    try {
+      await _persistEnabledPrayers();
+      await refreshPrayerTimes();
+    } catch (e) {
+      p.enabled = previous;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> setDelayMinutes(int minutes) async {
-    delayMinutesAfterAthan = minutes.clamp(0, 60);
+    final previous = delayMinutesAfterAthan;
+    delayMinutesAfterAthan = minutes.clamp(0, 60).toInt();
     notifyListeners();
-    await (await SharedPreferences.getInstance()).setInt('delayMinutes', delayMinutesAfterAthan);
-    await refreshPrayerTimes();
+    try {
+      await (await SharedPreferences.getInstance()).setInt('delayMinutes', delayMinutesAfterAthan);
+      await refreshPrayerTimes();
+    } catch (e) {
+      delayMinutesAfterAthan = previous;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> onRepsVerified(LockedApp app) async {
-    await refreshCalendarState();
-    final reps = app.repsFor(difficulty);
-    await _usageService.grantTemporaryUnlock(app.packageName, app.minutesGranted);
-    repsThisWeek += reps;
-    minutesEarnedToday += app.minutesGranted;
-    totalReps += reps;
-    totalMinutesEarned += app.minutesGranted;
-    final summary = _appUsage.putIfAbsent(app.packageName, () => AppUsageSummary());
-    summary
-      ..reps += reps
-      ..minutes += app.minutesGranted
-      ..unlocks += 1
-      ..lastUnlockDate = _dayKey(DateTime.now());
-    _recordActivityToday();
-    notifyListeners();
-    await _persistStats();
-    AdsService.instance.maybeShowInterstitialAfterUnlock();
+    final packageName = app.packageName.trim();
+    if (packageName.isEmpty || !_activeUnlockOperations.add(packageName)) return;
+    try {
+      await refreshCalendarState();
+      final reps = app.repsFor(difficulty);
+      await _usageService.grantTemporaryUnlock(packageName, app.minutesGranted);
+      repsThisWeek += reps;
+      minutesEarnedToday += app.minutesGranted;
+      totalReps += reps;
+      totalMinutesEarned += app.minutesGranted;
+      final summary = _appUsage.putIfAbsent(packageName, () => AppUsageSummary());
+      summary
+        ..reps += reps
+        ..minutes += app.minutesGranted
+        ..unlocks += 1
+        ..lastUnlockDate = _dayKey(DateTime.now());
+      _recordActivityToday();
+      notifyListeners();
+      await _persistStats();
+      AdsService.instance.maybeShowInterstitialAfterUnlock();
+    } finally {
+      _activeUnlockOperations.remove(packageName);
+    }
   }
 
-  /// Grants the prayer unlock only when the native side confirms that the
-  /// exact prayer being verified is still the active prayer lock.
   Future<void> onRugVerified(PrayerName prayer) async {
-    await refreshCalendarState();
-    await _usageService.grantAthanUnlock(prayer);
-    prayerUnlocks += 1;
-    _recordActivityToday();
-    notifyListeners();
-    await _persistStats();
+    final key = prayer.name;
+    if (!_activePrayerUnlockOperations.add(key)) return;
+    try {
+      await refreshCalendarState();
+      await _usageService.grantAthanUnlock(prayer);
+      prayerUnlocks += 1;
+      _recordActivityToday();
+      notifyListeners();
+      await _persistStats();
+    } finally {
+      _activePrayerUnlockOperations.remove(key);
+    }
   }
 
-  /// Reconciles in-memory daily/weekly counters with the current calendar.
-  /// This is safe to call whenever the app returns from background and keeps
-  /// a long-running app from carrying yesterday's daily or last-week's count.
   Future<void> refreshCalendarState() async {
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
@@ -473,14 +506,14 @@ class AppState extends ChangeNotifier {
 
   Future<void> _persistStats() async {
     final prefs = await SharedPreferences.getInstance();
-    final todayKey = _dayKey(DateTime.now());
-    await prefs.setInt('repsThisWeek', repsThisWeek);
-    await prefs.setString('repsWeekKey', _weekKey(DateTime.now()));
-    await prefs.setInt('minutesEarnedToday', minutesEarnedToday);
-    await prefs.setString('statsDayKey', todayKey);
-    await prefs.setInt('totalReps', totalReps);
-    await prefs.setInt('totalMinutesEarned', totalMinutesEarned);
-    await prefs.setInt('prayerUnlocks', prayerUnlocks);
+    final now = DateTime.now();
+    await prefs.setInt('repsThisWeek', repsThisWeek.clamp(0, 1000000000).toInt());
+    await prefs.setString('repsWeekKey', _weekKey(now));
+    await prefs.setInt('minutesEarnedToday', minutesEarnedToday.clamp(0, 1000000000).toInt());
+    await prefs.setString('statsDayKey', _dayKey(now));
+    await prefs.setInt('totalReps', totalReps.clamp(0, 1000000000).toInt());
+    await prefs.setInt('totalMinutesEarned', totalMinutesEarned.clamp(0, 1000000000).toInt());
+    await prefs.setInt('prayerUnlocks', prayerUnlocks.clamp(0, 1000000000).toInt());
     await prefs.setStringList('activityDates', _activityDates.toList()..sort());
     await prefs.setString('appUsageHistory', jsonEncode(_appUsage.map((key, value) => MapEntry(key, value.toJson()))));
   }
