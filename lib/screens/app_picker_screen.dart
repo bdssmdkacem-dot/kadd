@@ -253,3 +253,11 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                     ),
                   ),
 
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
