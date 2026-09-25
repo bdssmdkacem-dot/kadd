@@ -46,7 +46,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim
           disable-animations: true
           script: |
-            set -euo pipefail
+            bash -euo pipefail <<'SCRIPT'
 
             APK="build/app/outputs/flutter-apk/app-debug.apk"
             PACKAGE="com.comptaflow.kadd"
@@ -180,3 +180,4 @@ jobs:
               exit 1
             fi
             echo "Kadd emulator smoke test passed."
+            SCRIPT
