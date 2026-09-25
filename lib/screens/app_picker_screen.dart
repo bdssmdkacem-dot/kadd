@@ -7,7 +7,9 @@ import '../widgets/kadd_background.dart';
 import '../widgets/kadd_card.dart';
 
 class AppPickerScreen extends StatefulWidget {
-  const AppPickerScreen({super.key});
+  final bool initialSetup;
+
+  const AppPickerScreen({super.key, this.initialSetup = false});
 
   @override
   State<AppPickerScreen> createState() => _AppPickerScreenState();
@@ -16,6 +18,8 @@ class AppPickerScreen extends StatefulWidget {
 class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingObserver {
   String _query = '';
   String? _busyPackage;
+
+  bool get _hasSelectedApp => context.read<AppState>().apps.any((app) => app.isEnabled);
 
   @override
   void initState() {
@@ -50,6 +54,14 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
 
   Future<void> _openUsageAccessSettings() async {
     await context.read<AppState>().requestUsageAccess();
+  }
+
+  Future<void> _continueInitialSetup() async {
+    final state = context.read<AppState>();
+    if (!state.apps.any((app) => app.isEnabled)) return;
+    await state.completeOnboarding();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed('/');
   }
 
   Future<void> _setLocked(AppState state, String packageName, bool locked) async {
@@ -91,8 +103,11 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                   child: Row(
                     children: [
-                      IconButton(icon: const Icon(Icons.arrow_forward, color: AppColors.text), onPressed: () => Navigator.pop(context)),
-                      Expanded(child: Text('اختر تطبيقًا لتقفله', style: AppTextStyles.kufi(size: 17))),
+                      if (!widget.initialSetup)
+                        IconButton(icon: const Icon(Icons.arrow_forward, color: AppColors.text), onPressed: () => Navigator.pop(context))
+                      else
+                        const SizedBox(width: 48),
+                      Expanded(child: Text(widget.initialSetup ? 'ابدأ باختيار التطبيقات' : 'اختر تطبيقًا لتقفله', style: AppTextStyles.kufi(size: 17))),
                       if (state.loadingAvailableApps)
                         const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.unlock))
                       else
@@ -226,11 +241,15 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                           },
                         ),
                 ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+                if (widget.initialSetup)
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                      child: KaddPrimaryButton(
+                        label: 'متابعة إلى الإعدادات',
+                        onPressed: _hasSelectedApp ? _continueInitialSetup : null,
+                      ),
+                    ),
+                  ),
+
