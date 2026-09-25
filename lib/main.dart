@@ -16,6 +16,7 @@ import 'screens/stats_screen.dart';
 import 'screens/rep_camera_screen.dart';
 import 'screens/prayer_lock_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/app_picker_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -105,7 +106,7 @@ class _StartupEntry extends StatelessWidget {
             body: Center(child: CircularProgressIndicator(color: AppColors.unlock)),
           );
         }
-        return state.onboardingComplete ? const RootNav() : const OnboardingScreen();
+        return state.onboardingComplete ? const RootNav() : const AppPickerScreen(initialSetup: true);
       },
     );
   }
