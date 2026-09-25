@@ -6,10 +6,45 @@ PACKAGE="com.comptaflow.kadd"
 
 test -f "$APK"
 adb wait-for-device
+
+echo "Waiting for Android framework and package manager..."
+for i in $(seq 1 60); do
+  if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -qx "1" &&
+     adb shell cmd package list packages >/dev/null 2>&1; then
+    echo "Android package manager is ready."
+    break
+  fi
+  if [ "$i" -eq 60 ]; then
+    echo "Android package manager did not become ready."
+    adb get-state || true
+    adb shell getprop sys.boot_completed || true
+    adb logcat -d -t 300 || true
+    exit 1
+  fi
+  sleep 2
+done
+
 adb shell settings put secure show_ime_with_hard_keyboard 0 || true
 
 echo "Installing Kadd APK..."
-adb install -r "$APK"
+for attempt in 1 2 3; do
+  if adb install -r "$APK"; then
+    echo "APK installed successfully on attempt $attempt."
+    break
+  fi
+  if [ "$attempt" -eq 3 ]; then
+    echo "APK installation failed after 3 attempts."
+    adb get-state || true
+    adb shell getprop sys.boot_completed || true
+    adb logcat -d -t 500 || true
+    exit 1
+  fi
+  echo "APK installation attempt $attempt failed; restarting ADB connection and retrying..."
+  adb reconnect || true
+  sleep 3
+  adb wait-for-device
+  sleep 3
+done
 echo "Resetting app data for a true first-run test..."
 adb shell pm clear "$PACKAGE"
 echo "Granting Usage Access through AppOps for the emulator test..."
