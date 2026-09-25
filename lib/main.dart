@@ -15,7 +15,6 @@ import 'screens/prayer_settings_screen.dart';
 import 'screens/stats_screen.dart';
 import 'screens/rep_camera_screen.dart';
 import 'screens/prayer_lock_screen.dart';
-import 'screens/onboarding_screen.dart';
 import 'screens/app_picker_screen.dart';
 
 void main() {
