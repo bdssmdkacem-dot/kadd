@@ -172,6 +172,24 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                     ),
                   ),
                 ),
+                if (const bool.fromEnvironment('KADD_SMOKE_TEST'))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+                    child: Semantics(
+                      button: true,
+                      enabled: filtered.isNotEmpty && !state.loadingAvailableApps,
+                      label: 'اختبار اختيار أول تطبيق',
+                      onTap: (filtered.isNotEmpty && !state.loadingAvailableApps)
+                          ? () => _setLocked(state, filtered.first.packageName, !lockedPackages.contains(filtered.first.packageName))
+                          : null,
+                      child: OutlinedButton(
+                        onPressed: (filtered.isNotEmpty && !state.loadingAvailableApps)
+                            ? () => _setLocked(state, filtered.first.packageName, !lockedPackages.contains(filtered.first.packageName))
+                            : null,
+                        child: const Text('اختبار اختيار أول تطبيق'),
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 2),
                   child: Align(
