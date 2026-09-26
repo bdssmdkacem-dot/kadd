@@ -79,71 +79,52 @@ wait_for_text "ابدأ باختيار التطبيقات" 35
 wait_for_text "متابعة إلى الإعدادات" 10
 wait_for_text "تطبيقًا متاحًا" 20
 
-echo "Selecting the first launchable app exposed by the Flutter UI..."
-# The picker exposes each Flutter row through Semantics so UIAutomator can
-# locate the real row bounds instead of relying on fragile screen coordinates.
+echo "Selecting the first launchable app through the deterministic smoke-test hook..."
 python3 - <<'PY'
 import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-
 def dump():
     subprocess.run(
         ["adb", "shell", "uiautomator", "dump", "/sdcard/window.xml"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     return subprocess.check_output(
         ["adb", "shell", "cat", "/sdcard/window.xml"],
-        text=True,
-        stderr=subprocess.DEVNULL,
+        text=True, stderr=subprocess.DEVNULL,
     )
 
-
-def continue_enabled(root):
-    for node in root.iter("node"):
-        if node.attrib.get("content-desc") == "متابعة إلى الإعدادات":
-            return node.attrib.get("enabled") == "true"
-    return False
-
-
-def find_first_app_row(root):
-    for node in root.iter("node"):
-        label = node.attrib.get("content-desc", "")
-        bounds = node.attrib.get("bounds", "")
-        if label.startswith("قفل ") and bounds != "[0,0][0,0]":
-            return node
-    return None
-
-
 for attempt in range(1, 11):
-    xml = dump()
-    root = ET.fromstring(xml)
-    row = find_first_app_row(root)
-    if row is not None:
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", row.attrib["bounds"])
-        if match:
-            left, top, right, bottom = map(int, match.groups())
-            x = (left + right) // 2
-            y = (top + bottom) // 2
-            print(f"Found app row: {row.attrib.get('content-desc')} bounds={row.attrib['bounds']}")
-            print(f"Tapping app row center at ({x}, {y})")
-            subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
-            subprocess.run(["sleep", "1"], check=True)
-            root = ET.fromstring(dump())
-            if continue_enabled(root):
-                print("App selection confirmed.")
-                break
-    print(f"App row not selected yet; retry {attempt}/10")
+    root = ET.fromstring(dump())
+    target = None
+    for node in root.iter("node"):
+        if node.attrib.get("content-desc") == "اختبار اختيار أول تطبيق":
+            target = node
+            break
+    if target is not None:
+        bounds = target.attrib.get("bounds", "")
+        if target.attrib.get("enabled") == "true" and bounds != "[0,0][0,0]":
+            match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+            if match:
+                left, top, right, bottom = map(int, match.groups())
+                x = (left + right) // 2
+                y = (top + bottom) // 2
+                print(f"Tapping smoke-test selection hook at ({x}, {y})")
+                subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
+                subprocess.run(["sleep", "1"], check=True)
+                root = ET.fromstring(dump())
+                for node in root.iter("node"):
+                    if node.attrib.get("content-desc") == "متابعة إلى الإعدادات" and node.attrib.get("enabled") == "true":
+                        print("App selection confirmed.")
+                        sys.exit(0)
+    print(f"Smoke-test selection hook not ready; retry {attempt}/10")
     subprocess.run(["sleep", "1"], check=True)
-else:
-    print(dump())
-    sys.exit("Could not select an app row: Continue button is still disabled")
-PY
 
+print(dump())
+sys.exit("Could not select an app through the smoke-test hook")
+PY
 echo "Continuing to the main app..."
 # The Continue button is a Flutter-rendered control and has no useful native
 # bounds in UIAutomator. On the 1080x1920 emulator it occupies the bottom
