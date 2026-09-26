@@ -216,7 +216,9 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                               child: Semantics(
                                 container: true,
                                 button: true,
+                                enabled: !isBusy,
                                 toggled: isLocked,
+                                excludeSemantics: true,
                                 label: 'قفل ${app.name}',
                                 onTap: isBusy ? null : () => _setLocked(state, app.packageName, !isLocked),
                                 child: Material(
