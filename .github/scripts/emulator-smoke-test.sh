@@ -80,79 +80,52 @@ wait_for_text "متابعة إلى الإعدادات" 10
 wait_for_text "تطبيقًا متاحًا" 20
 
 echo "Selecting the first launchable app exposed by the Flutter UI..."
+# Flutter renders the app rows as a custom view, so Android UIAutomator does not
+# expose the individual rows as clickable native widgets. Tap a small set of
+# row-center coordinates until the Continue button becomes enabled.
 python3 - <<'PY'
-import re
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 
-subprocess.run(["adb", "shell", "uiautomator", "dump", "/sdcard/window.xml"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-xml = subprocess.check_output(
-    ["adb", "shell", "cat", "/sdcard/window.xml"],
-    text=True,
-    stderr=subprocess.DEVNULL,
-)
-root = ET.fromstring(xml)
-ignored = {
-    "ابدأ باختيار التطبيقات",
-    "متابعة إلى الإعدادات",
-    "ابحث عن تطبيق...",
-    "تطبيقًا متاحًا",
-    "تحديث",
-    "إشعار",
-}
-candidates = []
-for node in root.iter("node"):
-    text = (node.attrib.get("text") or "").strip()
-    bounds = node.attrib.get("bounds") or ""
-    if not text or text in ignored:
-        continue
-    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
-    if not m:
-        continue
-    x1, y1, x2, y2 = map(int, m.groups())
-    if y1 < 300 or y2 - y1 < 30:
-        continue
-    candidates.append((y1, x1, x2, y2, text))
-candidates.sort()
-if not candidates:
-    print(xml)
-    sys.exit("No selectable app candidate found in UIAutomator tree")
-y1, x1, x2, y2, text = candidates[0]
-x = (x1 + x2) // 2
-y = (y1 + y2) // 2
-print("Selecting app candidate: %r at (%d, %d)" % (text, x, y))
-subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
+
+def dump():
+    subprocess.run(
+        ["adb", "shell", "uiautomator", "dump", "/sdcard/window.xml"],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return subprocess.check_output(
+        ["adb", "shell", "cat", "/sdcard/window.xml"],
+        text=True,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def continue_enabled(xml):
+    return 'content-desc="متابعة إلى الإعدادات"' in xml and 'enabled="true"' in xml
+
+# The first list row starts below the search/count area. Try several safe
+# vertical positions; stop immediately after the first successful selection.
+for y in (450, 525, 600, 675, 750, 825):
+    print(f"Trying first app row tap at (540, {y})")
+    subprocess.run(["adb", "shell", "input", "tap", "540", str(y)], check=True)
+    # Allow the Flutter state update to reach the rendered button.
+    subprocess.run(["sleep", "1"], check=True)
+    xml = dump()
+    if continue_enabled(xml):
+        print(f"First app selection confirmed after tap at y={y}.")
+        break
+else:
+    print(dump())
+    sys.exit("Could not select an app row: Continue button is still disabled")
 PY
-
-sleep 2
-wait_for_text "متابعة إلى الإعدادات" 5
 
 echo "Continuing to the main app..."
-python3 - <<'PY'
-import re
-import subprocess
-import sys
-import xml.etree.ElementTree as ET
-xml = subprocess.check_output(
-    ["adb", "exec-out", "uiautomator", "dump", "/dev/tty"],
-    text=True,
-    stderr=subprocess.DEVNULL,
-)
-root = ET.fromstring(xml)
-for node in root.iter("node"):
-    if (node.attrib.get("text") or "").strip() == "متابعة إلى الإعدادات":
-        bounds = node.attrib.get("bounds", "")
-        m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
-        if m:
-            x1, y1, x2, y2 = map(int, m.groups())
-            subprocess.run(["adb", "shell", "input", "tap", str((x1+x2)//2), str((y1+y2)//2)], check=True)
-            break
-else:
-    print(xml)
-    sys.exit("Continue button not found")
-PY
-
+# The Continue button is a Flutter-rendered control and has no useful native
+# bounds in UIAutomator. On the 1080x1920 emulator it occupies the bottom
+# action area; tap its center directly.
+adb shell input tap 540 1810
 sleep 4
 XML="$(dump_ui)"
 if printf '%s' "$XML" | grep -Fq "ابدأ باختيار التطبيقات"; then
