@@ -242,6 +242,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                             final isLocked = lockedPackages.contains(app.packageName);
                             final isBusy = _busyPackage == app.packageName;
                             return Padding(
+                              key: ValueKey('kadd-app-row-${app.packageName}'),
                               padding: const EdgeInsets.only(bottom: 8),
                               child: Semantics(
                                 container: true,
