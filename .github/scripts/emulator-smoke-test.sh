@@ -127,7 +127,7 @@ echo "Continuing to the main app..."
 # The Continue button is a Flutter-rendered control and has no useful native
 # bounds in UIAutomator. On the 1080x1920 emulator it occupies the bottom
 # action area; tap its center directly.
-adb shell input tap 540 1810
+adb shell input tap 540 1840
 sleep 4
 XML="$(dump_ui)"
 if printf '%s' "$XML" | grep -Fq "ابدأ باختيار التطبيقات"; then
