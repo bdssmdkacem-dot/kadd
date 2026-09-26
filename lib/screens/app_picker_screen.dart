@@ -213,12 +213,18 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                             final isBusy = _busyPackage == app.packageName;
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(14),
-                                  onTap: isBusy ? null : () => _setLocked(state, app.packageName, !isLocked),
-                                  child: Container(
+                              child: Semantics(
+                                container: true,
+                                button: true,
+                                toggled: isLocked,
+                                label: 'قفل ${app.name}',
+                                onTap: isBusy ? null : () => _setLocked(state, app.packageName, !isLocked),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(14),
+                                    onTap: isBusy ? null : () => _setLocked(state, app.packageName, !isLocked),
+                                    child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                     decoration: BoxDecoration(
                                       color: AppColors.surface,
@@ -233,7 +239,8 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                                         const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                                       else
                                         Switch(value: isLocked, activeThumbColor: AppColors.signal, onChanged: (v) => _setLocked(state, app.packageName, v)),
-                                    ]),
+                                      ]),
+                                    ),
                                   ),
                                 ),
                               ),
