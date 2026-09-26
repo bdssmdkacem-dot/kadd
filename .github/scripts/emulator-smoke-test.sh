@@ -103,18 +103,20 @@ def dump():
 
 
 def continue_enabled(xml):
-    return 'content-desc="متابعة إلى الإعدادات"' in xml and 'enabled="true"' in xml
+    # Match the Continue button itself, not any unrelated enabled node.
+    import re
+    m = re.search(r'<node[^>]*content-desc="متابعة إلى الإعدادات"[^>]*>', xml)
+    return bool(m and 'enabled="true"' in m.group(0))
 
-# The first list row starts below the search/count area. Try several safe
-# vertical positions; stop immediately after the first successful selection.
-for y in (450, 525, 600, 675, 750, 825):
-    print(f"Trying first app row tap at (540, {y})")
+# The list starts below the count/search area. Try row-center coordinates
+# until the actual Continue button reports enabled=true.
+for y in (500, 560, 620, 680, 740, 800):
+    print(f"Trying app row tap at (540, {y})")
     subprocess.run(["adb", "shell", "input", "tap", "540", str(y)], check=True)
-    # Allow the Flutter state update to reach the rendered button.
     subprocess.run(["sleep", "1"], check=True)
     xml = dump()
     if continue_enabled(xml):
-        print(f"First app selection confirmed after tap at y={y}.")
+        print(f"App selection confirmed after tap at y={y}.")
         break
 else:
     print(dump())
