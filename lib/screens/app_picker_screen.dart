@@ -172,6 +172,36 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                     ),
                   ),
                 ),
+                if (const bool.fromEnvironment('KADD_SMOKE_TEST'))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: Material(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(14),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: (filtered.isNotEmpty && !state.loadingAvailableApps)
+                              ? () => _setLocked(
+                                    state,
+                                    filtered.first.packageName,
+                                    !lockedPackages.contains(filtered.first.packageName),
+                                  )
+                              : null,
+                          child: Center(
+                            child: Semantics(
+                              button: true,
+                              enabled: filtered.isNotEmpty && !state.loadingAvailableApps,
+                              label: 'اختبار اختيار أول تطبيق',
+                              child: const Text('اختبار اختيار أول تطبيق'),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 2),
                   child: Align(
@@ -213,12 +243,20 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                             final isBusy = _busyPackage == app.packageName;
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(14),
-                                  onTap: isBusy ? null : () => _setLocked(state, app.packageName, !isLocked),
-                                  child: Container(
+                              child: Semantics(
+                                container: true,
+                                button: true,
+                                enabled: !isBusy,
+                                toggled: isLocked,
+                                excludeSemantics: true,
+                                label: 'قفل ${app.name}',
+                                onTap: isBusy ? null : () => _setLocked(state, app.packageName, !isLocked),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(14),
+                                    onTap: isBusy ? null : () => _setLocked(state, app.packageName, !isLocked),
+                                    child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                     decoration: BoxDecoration(
                                       color: AppColors.surface,
@@ -233,7 +271,8 @@ class _AppPickerScreenState extends State<AppPickerScreen> with WidgetsBindingOb
                                         const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                                       else
                                         Switch(value: isLocked, activeThumbColor: AppColors.signal, onChanged: (v) => _setLocked(state, app.packageName, v)),
-                                    ]),
+                                      ]),
+                                    ),
                                   ),
                                 ),
                               ),
