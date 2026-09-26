@@ -105,20 +105,27 @@ for attempt in range(1, 11):
             break
     if target is not None:
         bounds = target.attrib.get("bounds", "")
-        if target.attrib.get("enabled") == "true" and bounds != "[0,0][0,0]":
-            match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
-            if match:
+        if target.attrib.get("enabled") == "true":
+            if bounds != "[0,0][0,0]":
+                match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+                if not match:
+                    raise RuntimeError(f"Unexpected bounds: {bounds}")
                 left, top, right, bottom = map(int, match.groups())
                 x = (left + right) // 2
                 y = (top + bottom) // 2
-                print(f"Tapping smoke-test selection hook at ({x}, {y})")
-                subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
-                subprocess.run(["sleep", "1"], check=True)
-                root = ET.fromstring(dump())
-                for node in root.iter("node"):
-                    if node.attrib.get("content-desc") == "متابعة إلى الإعدادات" and node.attrib.get("enabled") == "true":
-                        print("App selection confirmed.")
-                        sys.exit(0)
+            else:
+                # Flutter can expose a semantic node before UIAutomator receives
+                # its final bounds. The hook has a fixed 52px row immediately
+                # below the intro card, so use its stable center as fallback.
+                x, y = 540, 430
+            print(f"Tapping smoke-test selection hook at ({x}, {y}), bounds={bounds}")
+            subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
+            subprocess.run(["sleep", "1"], check=True)
+            root = ET.fromstring(dump())
+            for node in root.iter("node"):
+                if node.attrib.get("content-desc") == "متابعة إلى الإعدادات" and node.attrib.get("enabled") == "true":
+                    print("App selection confirmed.")
+                    sys.exit(0)
     print(f"Smoke-test selection hook not ready; retry {attempt}/10")
     subprocess.run(["sleep", "1"], check=True)
 
