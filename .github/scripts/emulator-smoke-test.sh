@@ -86,8 +86,9 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+subprocess.run(["adb", "shell", "uiautomator", "dump", "/sdcard/window.xml"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 xml = subprocess.check_output(
-    ["adb", "exec-out", "uiautomator", "dump", "/dev/tty"],
+    ["adb", "shell", "cat", "/sdcard/window.xml"],
     text=True,
     stderr=subprocess.DEVNULL,
 )
