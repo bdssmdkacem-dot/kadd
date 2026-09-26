@@ -17,8 +17,8 @@ class InstalledAppsService {
 
     lastError = null;
     try {
-      final diagnostics = await _usageService.getAppDiscoveryDiagnostics();
-      lastDiagnostics = diagnostics;
+      // Discovery is a native Android operation. Run it once; request
+      // diagnostics only when the result is actually empty.
       final rawApps = await _usageService.getLaunchableApps();
       final apps = rawApps
           .map(_toInstalledApp)
@@ -29,6 +29,11 @@ class InstalledAppsService {
 
       _cache = apps;
       if (apps.isEmpty) {
+        try {
+          lastDiagnostics = await _usageService.getAppDiscoveryDiagnostics();
+        } catch (_) {
+          // Preserve the primary discovery failure even if diagnostics fail.
+        }
         lastError = StateError('لم يعثر Android على تطبيقات قابلة للتشغيل. ${diagnosticSummary()}');
       }
       return apps;
