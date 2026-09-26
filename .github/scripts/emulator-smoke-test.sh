@@ -80,12 +80,13 @@ wait_for_text "متابعة إلى الإعدادات" 10
 wait_for_text "تطبيقًا متاحًا" 20
 
 echo "Selecting the first launchable app exposed by the Flutter UI..."
-# Flutter renders the app rows as a custom view, so Android UIAutomator does not
-# expose the individual rows as clickable native widgets. Tap a small set of
-# row-center coordinates until the Continue button becomes enabled.
+# The picker exposes each Flutter row through Semantics so UIAutomator can
+# locate the real row bounds instead of relying on fragile screen coordinates.
 python3 - <<'PY'
+import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 
 def dump():
@@ -102,22 +103,42 @@ def dump():
     )
 
 
-def continue_enabled(xml):
-    # Match the Continue button itself, not any unrelated enabled node.
-    import re
-    m = re.search(r'<node[^>]*content-desc="متابعة إلى الإعدادات"[^>]*>', xml)
-    return bool(m and 'enabled="true"' in m.group(0))
+def continue_enabled(root):
+    for node in root.iter("node"):
+        if node.attrib.get("content-desc") == "متابعة إلى الإعدادات":
+            return node.attrib.get("enabled") == "true"
+    return False
 
-# The list starts below the count/search area. Try row-center coordinates
-# until the actual Continue button reports enabled=true.
-for y in (500, 560, 620, 680, 740, 800):
-    print(f"Trying app row tap at (540, {y})")
-    subprocess.run(["adb", "shell", "input", "tap", "540", str(y)], check=True)
-    subprocess.run(["sleep", "1"], check=True)
+
+def find_first_app_row(root):
+    for node in root.iter("node"):
+        label = node.attrib.get("content-desc", "")
+        bounds = node.attrib.get("bounds", "")
+        if label.startswith("قفل ") and bounds != "[0,0][0,0]":
+            return node
+    return None
+
+
+for attempt in range(1, 11):
     xml = dump()
-    if continue_enabled(xml):
-        print(f"App selection confirmed after tap at y={y}.")
-        break
+    root = ET.fromstring(xml)
+    row = find_first_app_row(root)
+    if row is not None:
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", row.attrib["bounds"])
+        if match:
+            left, top, right, bottom = map(int, match.groups())
+            x = (left + right) // 2
+            y = (top + bottom) // 2
+            print(f"Found app row: {row.attrib.get('content-desc')} bounds={row.attrib['bounds']}")
+            print(f"Tapping app row center at ({x}, {y})")
+            subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
+            subprocess.run(["sleep", "1"], check=True)
+            root = ET.fromstring(dump())
+            if continue_enabled(root):
+                print("App selection confirmed.")
+                break
+    print(f"App row not selected yet; retry {attempt}/10")
+    subprocess.run(["sleep", "1"], check=True)
 else:
     print(dump())
     sys.exit("Could not select an app row: Continue button is still disabled")
