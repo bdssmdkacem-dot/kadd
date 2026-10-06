@@ -241,6 +241,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     try {
       await appState.refreshCalendarState();
       await appState.checkUsageAccess();
+      await appState.refreshPrayerTimes();
       await appState.loadAvailableApps(forceRefresh: true);
     } catch (error, stack) {
       debugPrint('Kadd: resume refresh failed: $error');
