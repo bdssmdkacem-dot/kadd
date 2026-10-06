@@ -3,6 +3,12 @@ import 'package:kadd/models/locked_app.dart';
 
 void main() {
   group('LockedApp configuration', () {
+    test('normalizes package names', () {
+      final app = LockedApp(packageName: '  com.example.app  ');
+
+      expect(app.packageName, 'com.example.app');
+    });
+
     test('uses safe defaults', () {
       final app = LockedApp(packageName: 'com.example.app');
 
