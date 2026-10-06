@@ -38,8 +38,8 @@ class MainActivity : FlutterActivity() {
                 "getLaunchableApps" -> try { result.success(discoverApps()) } catch (e: Exception) { android.util.Log.e("Kadd", "App discovery failed", e); result.error("APP_LIST_ERROR", e.message ?: "Unable to discover apps", null) }
                 "getAppDiscoveryDiagnostics" -> try { result.success(discoveryDiagnostics()) } catch (e: Exception) { android.util.Log.e("Kadd", "App discovery diagnostics failed", e); result.error("APP_DIAGNOSTICS_ERROR", e.message ?: "Unable to inspect installed apps", null) }
                 "syncLockedPackages" -> {
-                    val requested = call.argument<List<String>>("packages") ?: emptyList()
-                    val packages = sanitizeLockedPackages(requested)
+                    val requested = call.argument<List<*>>("packages") ?: emptyList<Any?>()
+                    val packages = sanitizeLockedPackages(requested.mapNotNull { it as? String })
                     LockPrefs.setLockedPackages(this, packages)
                     if (packages.isEmpty()) stopService(Intent(this, LockForegroundService::class.java)) else LockForegroundService.ensureRunning(this)
                     result.success(null)
@@ -47,7 +47,7 @@ class MainActivity : FlutterActivity() {
                 "clearAllLockState" -> { PrayerAlarmResetter.clear(this); LockPrefs.clearAllLockState(this); stopService(Intent(this, LockForegroundService::class.java)); result.success(null) }
                 "grantTemporaryUnlock" -> {
                     val packageName = call.argument<String>("packageName")?.trim()
-                    val minutes = call.argument<Int>("minutes")
+                    val minutes = call.argument<Number>("minutes")?.toInt()
                     when {
                         packageName.isNullOrEmpty() || minutes == null || minutes <= 0 || minutes > maxExerciseUnlockMinutes -> result.error("INVALID_UNLOCK", "packageName and minutes between 1 and $maxExerciseUnlockMinutes are required", null)
                         !LockPrefs.getLockedPackages(this).contains(packageName) -> result.error("APP_NOT_LOCKED", "The requested package is not currently configured as locked", null)
@@ -63,11 +63,26 @@ class MainActivity : FlutterActivity() {
                     else { LockPrefs.grantAthanUnlockForCurrentWindow(this); result.success(true) }
                 }
                 "scheduleAthanLocks" -> {
-                    @Suppress("UNCHECKED_CAST")
-                    val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
-                    val enabled = (call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String }).map { it.trim().lowercase(Locale.US) }.filter { it in supportedPrayerNames }.distinct()
-                    val safePrayers = prayers.filter { prayer -> val name = (prayer["name"] as? String)?.trim()?.lowercase(Locale.US); val epochMillis = (prayer["epochMillis"] as? Number)?.toLong(); name in supportedPrayerNames && epochMillis != null && epochMillis > 0L }
-                    AthanAlarmScheduler.schedule(this, safePrayers, call.argument<Int>("delayMinutes") ?: 5, call.argument<String>("cityName"), enabled)
+                    val rawPrayers = call.argument<List<*>>("prayers") ?: emptyList<Any?>()
+                    val prayers = rawPrayers.mapNotNull { item ->
+                        val map = item as? Map<*, *> ?: return@mapNotNull null
+                        mapOf<String, Any>(
+                            "name" to (map["name"] as? String).orEmpty(),
+                            "epochMillis" to ((map["epochMillis"] as? Number)?.toLong() ?: 0L),
+                        )
+                    }
+                    val rawEnabled = call.argument<List<*>>("enabledPrayerNames")
+                    val enabled = (rawEnabled?.mapNotNull { it as? String } ?: prayers.mapNotNull { it["name"] as? String })
+                        .map { it.trim().lowercase(Locale.US) }
+                        .filter { it in supportedPrayerNames }
+                        .distinct()
+                    val safePrayers = prayers.filter { prayer ->
+                        val name = (prayer["name"] as? String)?.trim()?.lowercase(Locale.US)
+                        val epochMillis = (prayer["epochMillis"] as? Number)?.toLong()
+                        name in supportedPrayerNames && epochMillis != null && epochMillis > 0L
+                    }
+                    val delayMinutes = call.argument<Number>("delayMinutes")?.toInt() ?: 5
+                    AthanAlarmScheduler.schedule(this, safePrayers, delayMinutes, call.argument<String>("cityName"), enabled)
                     result.success(null)
                 }
                 else -> result.notImplemented()
