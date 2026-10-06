@@ -5,14 +5,15 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 
@@ -37,8 +38,8 @@ class MainActivity : FlutterActivity() {
                 "getLaunchableApps" -> try { result.success(discoverApps()) } catch (e: Exception) { android.util.Log.e("Kadd", "App discovery failed", e); result.error("APP_LIST_ERROR", e.message ?: "Unable to discover apps", null) }
                 "getAppDiscoveryDiagnostics" -> try { result.success(discoveryDiagnostics()) } catch (e: Exception) { android.util.Log.e("Kadd", "App discovery diagnostics failed", e); result.error("APP_DIAGNOSTICS_ERROR", e.message ?: "Unable to inspect installed apps", null) }
                 "syncLockedPackages" -> {
-                    val requested = call.argument<List<String>>("packages") ?: emptyList()
-                    val packages = sanitizeLockedPackages(requested)
+                    val requested = call.argument<List<*>>("packages") ?: emptyList<Any?>()
+                    val packages = sanitizeLockedPackages(requested.mapNotNull { it as? String })
                     LockPrefs.setLockedPackages(this, packages)
                     if (packages.isEmpty()) stopService(Intent(this, LockForegroundService::class.java)) else LockForegroundService.ensureRunning(this)
                     result.success(null)
@@ -46,7 +47,7 @@ class MainActivity : FlutterActivity() {
                 "clearAllLockState" -> { PrayerAlarmResetter.clear(this); LockPrefs.clearAllLockState(this); stopService(Intent(this, LockForegroundService::class.java)); result.success(null) }
                 "grantTemporaryUnlock" -> {
                     val packageName = call.argument<String>("packageName")?.trim()
-                    val minutes = call.argument<Int>("minutes")
+                    val minutes = call.argument<Number>("minutes")?.toInt()
                     when {
                         packageName.isNullOrEmpty() || minutes == null || minutes <= 0 || minutes > maxExerciseUnlockMinutes -> result.error("INVALID_UNLOCK", "packageName and minutes between 1 and $maxExerciseUnlockMinutes are required", null)
                         !LockPrefs.getLockedPackages(this).contains(packageName) -> result.error("APP_NOT_LOCKED", "The requested package is not currently configured as locked", null)
@@ -62,11 +63,26 @@ class MainActivity : FlutterActivity() {
                     else { LockPrefs.grantAthanUnlockForCurrentWindow(this); result.success(true) }
                 }
                 "scheduleAthanLocks" -> {
-                    @Suppress("UNCHECKED_CAST")
-                    val prayers = call.argument<List<Map<String, Any>>>("prayers") ?: emptyList()
-                    val enabled = (call.argument<List<String>>("enabledPrayerNames") ?: prayers.mapNotNull { it["name"] as? String }).map { it.trim().lowercase(Locale.US) }.filter { it in supportedPrayerNames }.distinct()
-                    val safePrayers = prayers.filter { prayer -> val name = (prayer["name"] as? String)?.trim()?.lowercase(Locale.US); val epochMillis = (prayer["epochMillis"] as? Number)?.toLong(); name in supportedPrayerNames && epochMillis != null && epochMillis > 0L }
-                    AthanAlarmScheduler.schedule(this, safePrayers, call.argument<Int>("delayMinutes") ?: 5, call.argument<String>("cityName"), enabled)
+                    val rawPrayers = call.argument<List<*>>("prayers") ?: emptyList<Any?>()
+                    val prayers = rawPrayers.mapNotNull { item ->
+                        val map = item as? Map<*, *> ?: return@mapNotNull null
+                        mapOf<String, Any>(
+                            "name" to (map["name"] as? String).orEmpty(),
+                            "epochMillis" to ((map["epochMillis"] as? Number)?.toLong() ?: 0L),
+                        )
+                    }
+                    val rawEnabled = call.argument<List<*>>("enabledPrayerNames")
+                    val enabled = (rawEnabled?.mapNotNull { it as? String } ?: prayers.mapNotNull { it["name"] as? String })
+                        .map { it.trim().lowercase(Locale.US) }
+                        .filter { it in supportedPrayerNames }
+                        .distinct()
+                    val safePrayers = prayers.filter { prayer ->
+                        val name = (prayer["name"] as? String)?.trim()?.lowercase(Locale.US)
+                        val epochMillis = (prayer["epochMillis"] as? Number)?.toLong()
+                        name in supportedPrayerNames && epochMillis != null && epochMillis > 0L
+                    }
+                    val delayMinutes = call.argument<Number>("delayMinutes")?.toInt() ?: 5
+                    AthanAlarmScheduler.schedule(this, safePrayers, delayMinutes, call.argument<String>("cityName"), enabled)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -83,8 +99,9 @@ class MainActivity : FlutterActivity() {
         val ownPackage = applicationContext.packageName
         var launcherCount = 0
         var installedCount = 0
-
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+
+        // Primary: normal launcher resolution.
         try {
             val launcherActivities = packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
             launcherCount = launcherActivities.size
@@ -94,27 +111,37 @@ class MainActivity : FlutterActivity() {
             }
         } catch (e: Exception) { android.util.Log.w("Kadd", "Launcher query failed", e) }
 
+        // Secondary: package-scoped launcher resolution. This is intentionally
+        // independent of getLaunchIntentForPackage(), which can return null on
+        // OEM builds even when the package exposes a launcher activity.
         try {
             @Suppress("DEPRECATION")
-            val packages = packageManager.getInstalledPackages(PackageManager.GET_ACTIVITIES or PackageManager.MATCH_ALL)
-            installedCount = packages.size
-            packages.forEach { pkg ->
-                val appInfo = pkg.applicationInfo ?: return@forEach
-                if (appInfo.packageName == ownPackage || !isInstalled(appInfo)) return@forEach
-                val hasLauncherActivity = pkg.activities.orEmpty().any { activity ->
-                    activity.enabled && activity.exported && activity.intentFilters?.any { filter -> filter.hasAction(Intent.ACTION_MAIN) && filter.hasCategory(Intent.CATEGORY_LAUNCHER) } == true
-                }
-                if (hasLauncherActivity) addApp(byPackage, appInfo)
+            val installed = packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
+            installedCount = installed.size
+            installed.forEach { appInfo ->
+                if (appInfo.packageName == ownPackage || !isInstalled(appInfo) || byPackage.containsKey(appInfo.packageName)) return@forEach
+                try {
+                    val scopedIntent = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_LAUNCHER)
+                        setPackage(appInfo.packageName)
+                    }
+                    val matches = packageManager.queryIntentActivities(scopedIntent, PackageManager.MATCH_ALL)
+                    if (matches.isNotEmpty()) addApp(byPackage, appInfo)
+                } catch (_: Exception) { }
             }
-        } catch (e: Exception) { android.util.Log.w("Kadd", "Installed-package activity query failed", e) }
+        } catch (e: Exception) { android.util.Log.w("Kadd", "Installed application fallback failed", e) }
 
+        // Last fallback: getLaunchIntentForPackage for older/OEM PackageManager
+        // implementations where package-scoped query is unavailable.
         if (byPackage.isEmpty()) {
             try {
                 @Suppress("DEPRECATION")
                 val installed = packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
                 installedCount = maxOf(installedCount, installed.size)
-                installed.forEach { appInfo -> if (appInfo.packageName != ownPackage && isInstalled(appInfo) && isLaunchablePackage(appInfo.packageName)) addApp(byPackage, appInfo) }
-            } catch (e: Exception) { android.util.Log.w("Kadd", "Application fallback query failed", e) }
+                installed.forEach { appInfo ->
+                    if (appInfo.packageName != ownPackage && isInstalled(appInfo) && isLaunchablePackage(appInfo.packageName)) addApp(byPackage, appInfo)
+                }
+            } catch (e: Exception) { android.util.Log.w("Kadd", "Legacy application fallback failed", e) }
         }
 
         val apps = byPackage.values.sortedBy { (it["name"] as String).lowercase(Locale.getDefault()) }
@@ -124,14 +151,12 @@ class MainActivity : FlutterActivity() {
     private fun isInstalled(appInfo: ApplicationInfo): Boolean = (appInfo.flags and ApplicationInfo.FLAG_INSTALLED) != 0
     private fun discoverApps(): List<Map<String, Any?>> = discoverySnapshot().first
     private fun discoveryDiagnostics(): Map<String, Any> { val snapshot = discoverySnapshot(); return mapOf("launcherCount" to (snapshot.second["launcherCount"] ?: 0), "installedCount" to (snapshot.second["installedCount"] ?: 0), "launchableCount" to (snapshot.second["launchableCount"] ?: 0), "ownPackage" to applicationContext.packageName, "queryAllPackagesDeclared" to true) }
-
     private fun addApp(destination: MutableMap<String, Map<String, Any?>>, appInfo: ApplicationInfo) {
         val packageName = appInfo.packageName
         if (destination.containsKey(packageName)) return
         val label = try { appInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty() } catch (_: Exception) { "" }
         destination[packageName] = mapOf("name" to if (label.isEmpty()) packageName else label, "packageName" to packageName, "icon" to try { drawableToPng(appInfo.loadIcon(packageManager)) } catch (_: Exception) { null }, "isSystemApp" to ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0))
     }
-
     private fun drawableToPng(drawable: android.graphics.drawable.Drawable): ByteArray? = try { val size = 96; val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888); val canvas = Canvas(bitmap); drawable.setBounds(0, 0, size, size); drawable.draw(canvas); ByteArrayOutputStream().use { output -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, output); bitmap.recycle(); output.toByteArray() } } catch (_: Exception) { null }
     private fun hasUsageAccess(): Boolean { val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager; return appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName) == AppOpsManager.MODE_ALLOWED }
 }
