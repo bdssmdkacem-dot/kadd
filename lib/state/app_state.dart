@@ -133,8 +133,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> checkUsageAccess() async {
+    final wasGranted = hasUsageAccess;
     hasUsageAccess = await _usageService.hasUsageAccess();
-    notifyListeners();
+    if (hasUsageAccess) {
+      try {
+        await _syncLockedPackages();
+      } catch (e, st) {
+        debugPrint('Kadd: lock service resync failed after Usage Access change: $e\n$st');
+      }
+    }
+    if (hasUsageAccess != wasGranted) notifyListeners();
+    else notifyListeners();
   }
 
   Future<void> requestUsageAccess() => _usageService.requestUsageAccess();
