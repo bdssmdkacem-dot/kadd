@@ -31,11 +31,12 @@ class LockedApp {
   bool isEnabled;
 
   LockedApp({
-    required this.packageName,
+    required String packageName,
     int baseReps = 20,
     int minutesGranted = 15,
     this.isEnabled = true,
-  })  : baseReps = baseReps.clamp(1, 500),
+  })  : packageName = packageName.trim(),
+        baseReps = baseReps.clamp(1, 500),
         minutesGranted = minutesGranted.clamp(1, 180);
 
   int repsFor(Difficulty d) => (baseReps * d.multiplier).round().clamp(1, 500);
