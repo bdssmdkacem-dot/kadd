@@ -295,9 +295,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> completeOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('onboardingComplete', true);
     onboardingComplete = true;
     notifyListeners();
-    await (await SharedPreferences.getInstance()).setBool('onboardingComplete', true);
   }
 
   Future<void> resetAllData() async {
@@ -325,17 +326,35 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setCity(MoroccanCity city) async {
-    selectedCity = city;
-    notifyListeners();
-    await (await SharedPreferences.getInstance()).setString('selectedCity', city.aladhanName);
-    await refreshPrayerTimes();
+    final previous = selectedCity;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('selectedCity', city.aladhanName);
+      selectedCity = city;
+      notifyListeners();
+      await refreshPrayerTimes();
+    } catch (e) {
+      selectedCity = previous;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> _scheduleCurrentPrayerLocks() async {
+    await _usageService.scheduleAthanLocks(
+      prayers.where((p) => p.enabled && p.timeToday != null).toList(),
+      delayMinutesAfterAthan,
+      cityName: selectedCity.aladhanName,
+    );
   }
 
   Future<void> refreshPrayerTimes() async {
     try {
       final result = await _prayerTimesService.fetchTodayTimings(selectedCity);
-      for (final p in prayers) p.timeToday = result.timings[p.name.aladhanKey];
-      await _usageService.scheduleAthanLocks(prayers.where((p) => p.enabled && p.timeToday != null).toList(), delayMinutesAfterAthan, cityName: selectedCity.aladhanName);
+      for (final p in prayers) {
+        p.timeToday = result.timings[p.name.aladhanKey];
+      }
+      await _scheduleCurrentPrayerLocks();
       notifyListeners();
     } catch (e) {
       debugPrint('Prayer time fetch failed: $e');
@@ -344,9 +363,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setDifficulty(Difficulty d) async {
-    difficulty = d;
-    notifyListeners();
-    await (await SharedPreferences.getInstance()).setInt('difficulty', d.index);
+    final previous = difficulty;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('difficulty', d.index);
+      difficulty = d;
+      notifyListeners();
+    } catch (e) {
+      difficulty = previous;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> toggleApp(LockedApp app, bool value) async {
@@ -369,9 +396,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       await _persistEnabledPrayers();
+      await _scheduleCurrentPrayerLocks();
       await refreshPrayerTimes();
     } catch (e) {
       p.enabled = previous;
+      await _persistEnabledPrayers();
+      try {
+        await _scheduleCurrentPrayerLocks();
+      } catch (_) {}
       notifyListeners();
       rethrow;
     }
@@ -383,9 +415,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       await (await SharedPreferences.getInstance()).setInt('delayMinutes', delayMinutesAfterAthan);
+      await _scheduleCurrentPrayerLocks();
       await refreshPrayerTimes();
     } catch (e) {
       delayMinutesAfterAthan = previous;
+      await (await SharedPreferences.getInstance()).setInt('delayMinutes', previous);
+      try {
+        await _scheduleCurrentPrayerLocks();
+      } catch (_) {}
       notifyListeners();
       rethrow;
     }
