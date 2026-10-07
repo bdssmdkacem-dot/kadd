@@ -1,63 +1,51 @@
 #!/usr/bin/env python3
-"""Patch the Flutter-generated AndroidManifest.xml for kadd.
+"""Build the Android platform from canonical Kadd additions.
 
-The Android manifest is XML, and XML comments may NOT contain ``--``.
-This script deliberately removes comments from injected XML fragments so
-human-readable notes in the source fragments can never break manifest parsing.
+Flutter owns the generated Android project. Kadd owns only the native additions
+under android_additions/. This script patches the generated project deterministically
+so local builds and CI use the same Android configuration.
 """
 import re
 import sys
 from pathlib import Path
 
-MANIFEST_PATH = Path("android/app/src/main/AndroidManifest.xml")
-PERMISSIONS_PATH = Path("android_additions/manifest_permissions.xml")
-APPLICATION_PATH = Path("android_additions/manifest_application.xml")
-QUERIES_INTENTS_PATH = Path("android_additions/manifest_queries_intents.xml")
+ROOT = Path(__file__).resolve().parents[1]
+ANDROID = ROOT / "android"
+MANIFEST_PATH = ANDROID / "app/src/main/AndroidManifest.xml"
+APP_GRADLE_PATH = ANDROID / "app/build.gradle"
+STYLES_PATH = ANDROID / "app/src/main/res/values/styles.xml"
+
+PERMISSIONS_PATH = ROOT / "android_additions/manifest_permissions.xml"
+APPLICATION_PATH = ROOT / "android_additions/manifest_application.xml"
+QUERIES_INTENTS_PATH = ROOT / "android_additions/manifest_queries_intents.xml"
+LOCK_THEME_PATH = ROOT / "android_additions/res/values/lock_theme.xml"
 
 
 def strip_xml_comments(text: str) -> str:
-    """Remove XML comments from an injected fragment.
-
-    This is intentionally done before insertion. XML comments are documentation
-    only and are not needed at runtime; removing them avoids SAX failures caused
-    by accidental ``--`` sequences in translated/generated comments.
-    """
     return re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL).strip()
 
 
-def assert_no_invalid_comment(text: str) -> None:
-    """Fail early with a useful message if the final manifest has bad comments."""
-    for match in re.finditer(r"<!--(.*?)-->", text, flags=re.DOTALL):
-        if "--" in match.group(1):
-            sys.exit("error: AndroidManifest.xml contains '--' inside an XML comment")
+def fail(message: str) -> None:
+    sys.exit(f"error: {message}")
 
 
-def main() -> None:
+def patch_manifest() -> None:
     if not MANIFEST_PATH.exists():
-        sys.exit(
-            f"error: {MANIFEST_PATH} not found — run `flutter create --platforms=android .` first"
-        )
+        fail(f"{MANIFEST_PATH} not found — run flutter create --platforms=android --org com.comptaflow . first")
 
     manifest = MANIFEST_PATH.read_text(encoding="utf-8")
     permissions = strip_xml_comments(PERMISSIONS_PATH.read_text(encoding="utf-8"))
     application_block = strip_xml_comments(APPLICATION_PATH.read_text(encoding="utf-8"))
     queries_intents = strip_xml_comments(QUERIES_INTENTS_PATH.read_text(encoding="utf-8"))
 
-    # Prevent duplicate patching if this script is run locally more than once.
     marker_start = "<!-- kadd: permissions injected by scripts/patch_manifest.py -->"
     if marker_start not in manifest:
         manifest_tag_end = manifest.find(">", manifest.find("<manifest"))
         if manifest_tag_end == -1:
-            sys.exit("error: could not find <manifest ...> opening tag")
-        insert_at = manifest_tag_end + 1
-        injected = (
-            "\n\n    " + marker_start + "\n    "
-            + permissions.replace("\n", "\n    ")
-            + "\n"
-        )
-        manifest = manifest[:insert_at] + injected + manifest[insert_at:]
+            fail("could not find <manifest ...> opening tag")
+        injected = "\n\n    " + marker_start + "\n    " + permissions.replace("\n", "\n    ") + "\n"
+        manifest = manifest[:manifest_tag_end + 1] + injected + manifest[manifest_tag_end + 1:]
 
-    # Merge launcher visibility into Flutter's existing <queries> block.
     queries_close = "</queries>"
     queries_idx = manifest.find(queries_close)
     launcher_marker = "<!-- kadd: launcher-app visibility, injected by scripts/patch_manifest.py -->"
@@ -73,7 +61,7 @@ def main() -> None:
         manifest_close = "</manifest>"
         close_idx = manifest.rfind(manifest_close)
         if close_idx == -1:
-            sys.exit("error: could not find </manifest> closing tag")
+            fail("could not find </manifest> closing tag")
         manifest = (
             manifest[:close_idx]
             + "    " + launcher_marker + "\n"
@@ -83,13 +71,12 @@ def main() -> None:
             + manifest[close_idx:]
         )
 
-    # Insert service/activity/receivers before </application> once.
     components_marker = "<!-- kadd: components injected by scripts/patch_manifest.py -->"
     if components_marker not in manifest:
         close_tag = "</application>"
         idx = manifest.rfind(close_tag)
         if idx == -1:
-            sys.exit("error: could not find </application> closing tag")
+            fail("could not find </application> closing tag")
         manifest = (
             manifest[:idx]
             + "\n        " + components_marker + "\n        "
@@ -98,9 +85,61 @@ def main() -> None:
             + manifest[idx:]
         )
 
-    assert_no_invalid_comment(manifest)
+    manifest = manifest.replace(
+        'xmlns:android="http://schemas.android.com/apk/res/android"',
+        'xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"',
+        1,
+    ) if 'xmlns:tools=' not in manifest else manifest
+
+    for match in re.finditer(r"<!--(.*?)-->", manifest, flags=re.DOTALL):
+        if "--" in match.group(1):
+            fail("AndroidManifest.xml contains '--' inside an XML comment")
+
     MANIFEST_PATH.write_text(manifest, encoding="utf-8")
-    print(f"Patched {MANIFEST_PATH}")
+
+
+def patch_gradle() -> None:
+    if not APP_GRADLE_PATH.exists():
+        fail(f"{APP_GRADLE_PATH} not found")
+    gradle = APP_GRADLE_PATH.read_text(encoding="utf-8")
+    marker = "// kadd: generated Android configuration"
+    if marker not in gradle:
+        needle = "defaultConfig {"
+        idx = gradle.find(needle)
+        if idx == -1:
+            fail("could not find defaultConfig block in generated app/build.gradle")
+        insertion = (
+            f"{needle}\n"
+            "        " + marker + "\n"
+            "        manifestPlaceholders = ["
+            " KADD_ADMOB_APP_ID: System.getenv('KADD_ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713'"
+            " ]\n"
+        )
+        gradle = gradle[:idx] + insertion + gradle[idx + len(needle):]
+    APP_GRADLE_PATH.write_text(gradle, encoding="utf-8")
+
+
+def patch_styles() -> None:
+    if not STYLES_PATH.exists():
+        fail(f"{STYLES_PATH} not found")
+    if not LOCK_THEME_PATH.exists():
+        fail(f"{LOCK_THEME_PATH} not found")
+    styles = STYLES_PATH.read_text(encoding="utf-8")
+    lock_theme = strip_xml_comments(LOCK_THEME_PATH.read_text(encoding="utf-8"))
+    marker = "kadd: LockTheme"
+    if marker not in styles:
+        idx = styles.rfind("</resources>")
+        if idx == -1:
+            fail("could not find </resources> in generated styles.xml")
+        styles = styles[:idx] + "\n    <!-- " + marker + " -->\n    " + lock_theme + "\n" + styles[idx:]
+    STYLES_PATH.write_text(styles, encoding="utf-8")
+
+
+def main() -> None:
+    patch_manifest()
+    patch_gradle()
+    patch_styles()
+    print("Patched generated Android project from android_additions/")
 
 
 if __name__ == "__main__":
