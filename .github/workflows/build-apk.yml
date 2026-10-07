@@ -49,6 +49,9 @@ jobs:
       - name: Restore analyzer configuration
         run: git checkout -- analysis_options.yaml
 
+      - name: Remove Flutter-generated sample test
+        run: rm -f test/widget_test.dart
+
       - name: Generate launcher icons
         run: flutter pub run flutter_launcher_icons
 
