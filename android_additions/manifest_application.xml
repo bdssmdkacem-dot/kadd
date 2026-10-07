@@ -1,10 +1,6 @@
-<!-- AdMob: معرف تطبيق تجريبي رسمي من Google (ca-app-pub-3940256099942544~3347511713).
-     يخدم بلا أي تسجيل، لكن يورّي "Test Ad" فقط أبدًا. قبل النشر على Play
-     Store، بدّله بمعرف تطبيقك الحقيقي من https://apps.admob.com (بعد ما
-     تسجّل التطبيق هناك) — راجع PLAYSTORE_CHECKLIST.md § AdMob. -->
 <meta-data
     android:name="com.google.android.gms.ads.APPLICATION_ID"
-    android:value="ca-app-pub-3940256099942544~3347511713" />
+    android:value="${KADD_ADMOB_APP_ID}" />
 
 <service
     android:name=".LockForegroundService"
@@ -18,25 +14,29 @@
 <activity
     android:name=".LockActivity"
     android:exported="false"
-    android:theme="@style/LaunchTheme"
+    android:theme="@style/LockTheme"
     android:launchMode="singleTask"
     android:showWhenLocked="false"
     android:turnScreenOn="false" />
 
-<receiver android:name=".BootReceiver" android:exported="false">
+<receiver android:name=".BootReceiver" android:exported="true">
     <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED" />
         <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
         <action android:name="android.intent.action.TIMEZONE_CHANGED" />
         <action android:name="android.intent.action.TIME_SET" />
         <action android:name="android.intent.action.DATE_CHANGED" />
-        <action android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+        <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
     </intent-filter>
 </receiver>
 
 <receiver android:name=".PackageRemovedReceiver" android:exported="false">
     <intent-filter>
+        <action android:name="android.intent.action.PACKAGE_REMOVED" />
         <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
         <data android:scheme="package" />
     </intent-filter>
 </receiver>
+
+<receiver android:name=".AthanLockReceiver" android:exported="false" />
+<receiver android:name=".PrayerScheduleRefreshReceiver" android:exported="false" />
