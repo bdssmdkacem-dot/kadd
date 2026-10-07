@@ -1,0 +1,6 @@
+<style name="LockTheme" parent="@style/LaunchTheme">
+    <item name="android:windowFullscreen">true</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:windowActionModeOverlay">true</item>
+    <item name="android:colorAccent">#FF8A00</item>
+</style>
