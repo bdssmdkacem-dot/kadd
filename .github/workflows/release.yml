@@ -23,37 +23,11 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Install Android API 36
-        uses: android-actions/sdkmanager@v1
+      - name: Setup Android SDK and install API 36
+        uses: android-actions/setup-android@v4
         with:
-          packages: 'platforms;android-36 build-tools;36.0.0'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: Validate production secrets
-        env:
-          KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
-          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
-          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
-          KADD_RELEASE_KEYSTORE_B64: ${{ secrets.KADD_RELEASE_KEYSTORE_B64 }}
-          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
-          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
-          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
-        run: |
-          test -n "$KADD_ADMOB_APP_ID"
-          test -n "$KADD_ADMOB_BANNER_ID"
-          test -n "$KADD_ADMOB_INTERSTITIAL_ID"
-          test -n "$KADD_RELEASE_KEYSTORE_B64"
-          test -n "$KADD_RELEASE_STORE_PASSWORD"
-          test -n "$KADD_RELEASE_KEY_ALIAS"
-          test -n "$KADD_RELEASE_KEY_PASSWORD"
-
-      - name: Decode production upload keystore
-        env:
-          KADD_RELEASE_KEYSTORE_B64: ${{ secrets.KADD_RELEASE_KEYSTORE_B64 }}
-        run: |
-          echo "$KADD_RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/kadd-upload.jks"
-          test -s "$RUNNER_TEMP/kadd-upload.jks"
 
       - name: Generate Android platform
         run: |
