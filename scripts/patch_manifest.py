@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ANDROID = ROOT / "android"
 MANIFEST_PATH = ANDROID / "app/src/main/AndroidManifest.xml"
-APP_GRADLE_PATH = ANDROID / "app/build.gradle"
+APP_GRADLE_PATH = next((p for p in (ANDROID / "app/build.gradle", ANDROID / "app/build.gradle.kts") if p.exists()), ANDROID / "app/build.gradle")
 STYLES_PATH = ANDROID / "app/src/main/res/values/styles.xml"
 
 PERMISSIONS_PATH = ROOT / "android_additions/manifest_permissions.xml"
@@ -102,33 +102,80 @@ def patch_manifest() -> None:
 def patch_gradle() -> None:
     if not APP_GRADLE_PATH.exists():
         fail(f"{APP_GRADLE_PATH} not found")
+
     gradle = APP_GRADLE_PATH.read_text(encoding="utf-8")
+    is_kotlin_dsl = APP_GRADLE_PATH.name.endswith(".kts")
     marker = "// kadd: generated Android configuration"
+
     if marker not in gradle:
-        # Kadd is an Android-first Play app. New Play submissions from
-        # 2026-08-31 require API 36+.
-        gradle = re.sub(r"compileSdk(?:Version)?\s*=.*", "compileSdk = 36", gradle)
-        gradle = re.sub(r"targetSdk(?:Version)?\s*=.*", "targetSdk = 36", gradle)
+        # Kadd is an Android-first Play app. Keep compile/target SDK at API 36.
+        gradle = re.sub(
+            r"(?m)^\\s*compileSdk\\s*=.*$",
+            "    compileSdk = 36" if is_kotlin_dsl else "    compileSdk 36",
+            gradle,
+            count=1,
+        )
+        gradle = re.sub(
+            r"(?m)^\\s*targetSdk\\s*=.*$",
+            "        targetSdk = 36" if is_kotlin_dsl else "        targetSdk 36",
+            gradle,
+            count=1,
+        )
+
         needle = "defaultConfig {"
         idx = gradle.find(needle)
         if idx == -1:
-            fail("could not find defaultConfig block in generated app/build.gradle")
-        insertion = (
-            f"{needle}\n"
-            "        " + marker + "\n"
-            "        manifestPlaceholders = ["
-            " KADD_ADMOB_APP_ID: System.getenv('KADD_ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713'"
-            " ]\n"
-        )
+            fail(f"could not find defaultConfig block in generated {APP_GRADLE_PATH.name}")
+
+        if is_kotlin_dsl:
+            insertion = (
+                f"{needle}\\n"
+                f"        {marker}\\n"
+                '        manifestPlaceholders["KADD_ADMOB_APP_ID"] = '
+                '(System.getenv("KADD_ADMOB_APP_ID") ?: '
+                '"ca-app-pub-3940256099942544~3347511713")\\n'
+            )
+        else:
+            insertion = (
+                f"{needle}\\n"
+                f"        {marker}\\n"
+                "        manifestPlaceholders = ["
+                " KADD_ADMOB_APP_ID: System.getenv('KADD_ADMOB_APP_ID') ?: "
+                "'ca-app-pub-3940256099942544~3347511713'"
+                " ]\\n"
+            )
         gradle = gradle[:idx] + insertion + gradle[idx + len(needle):]
+
     if os.environ.get("KADD_REQUIRE_PRODUCTION_SIGNING") == "1":
         keystore = os.environ.get("KADD_RELEASE_KEYSTORE", "")
         if not keystore or not Path(keystore).is_file():
             fail("production signing requested but KADD_RELEASE_KEYSTORE does not point to a keystore")
+
         signing_marker = "// kadd: production signing"
         if signing_marker not in gradle:
-            gradle += """
-            
+            if is_kotlin_dsl:
+                gradle += """
+                
+// kadd: production signing
+android {
+    signingConfigs {
+        create("kaddProduction") {
+            storeFile = file(System.getenv("KADD_RELEASE_KEYSTORE"))
+            storePassword = System.getenv("KADD_RELEASE_STORE_PASSWORD")
+            keyAlias = System.getenv("KADD_RELEASE_KEY_ALIAS")
+            keyPassword = System.getenv("KADD_RELEASE_KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("kaddProduction")
+        }
+    }
+}
+"""
+            else:
+                gradle += """
+                
 // kadd: production signing
 android.signingConfigs.create("kaddProduction") {
     storeFile = file(System.getenv("KADD_RELEASE_KEYSTORE"))
@@ -138,8 +185,8 @@ android.signingConfigs.create("kaddProduction") {
 }
 android.buildTypes.release.signingConfig = android.signingConfigs.kaddProduction
 """
-    APP_GRADLE_PATH.write_text(gradle, encoding="utf-8")
 
+    APP_GRADLE_PATH.write_text(gradle, encoding="utf-8")
 
 def patch_styles() -> None:
     if not STYLES_PATH.exists():
