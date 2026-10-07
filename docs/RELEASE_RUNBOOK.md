@@ -11,7 +11,7 @@ Configure these repository secrets only when the corresponding production config
 - `KADD_ADMOB_APP_ID`
 - `KADD_ADMOB_BANNER_ID`
 - `KADD_ADMOB_INTERSTITIAL_ID`
-- `KADD_RELEASE_KEYSTORE_PATH`
+- `KADD_RELEASE_KEYSTORE_B64`
 - `KADD_RELEASE_STORE_PASSWORD`
 - `KADD_RELEASE_KEY_ALIAS`
 - `KADD_RELEASE_KEY_PASSWORD`
@@ -41,7 +41,7 @@ For Google Play:
 4. Build the AAB from CI.
 5. Verify the AAB is signed with the intended upload key before upload.
 
-The debug-key fallback exists for CI build validation only. It must not be treated as the production Play signing configuration.
+The validation workflow may use generated/debug signing. The production workflow has no debug-key fallback: it requires `KADD_RELEASE_KEYSTORE_B64` and the signing passwords.
 
 ## 4. Play policy gate
 
@@ -96,7 +96,7 @@ Do not use an intermediate device test as a substitute for completing the releas
 
 ## 8. Release artifact rule
 
-A successful GitHub Actions build proves that the project compiles, tests pass, and CI can produce APK/AAB artifacts. It does **not** by itself prove that the artifact is ready for Google Play production.
+The validation workflow proves that the project compiles, tests pass, and CI can produce APK/AAB artifacts. It does **not** by itself prove that the artifact is ready for Google Play production.
 
 Production readiness requires all of the following:
 
