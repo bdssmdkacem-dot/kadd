@@ -5,6 +5,7 @@ Flutter owns the generated Android project. Kadd owns only the native additions
 under android_additions/. This script patches the generated project deterministically
 so local builds and CI use the same Android configuration.
 """
+import os
 import re
 import sys
 from pathlib import Path
@@ -120,6 +121,23 @@ def patch_gradle() -> None:
             " ]\n"
         )
         gradle = gradle[:idx] + insertion + gradle[idx + len(needle):]
+    if os.environ.get("KADD_REQUIRE_PRODUCTION_SIGNING") == "1":
+        keystore = os.environ.get("KADD_RELEASE_KEYSTORE", "")
+        if not keystore or not Path(keystore).is_file():
+            fail("production signing requested but KADD_RELEASE_KEYSTORE does not point to a keystore")
+        signing_marker = "// kadd: production signing"
+        if signing_marker not in gradle:
+            gradle += """
+            
+// kadd: production signing
+android.signingConfigs.create("kaddProduction") {
+    storeFile = file(System.getenv("KADD_RELEASE_KEYSTORE"))
+    storePassword = System.getenv("KADD_RELEASE_STORE_PASSWORD")
+    keyAlias = System.getenv("KADD_RELEASE_KEY_ALIAS")
+    keyPassword = System.getenv("KADD_RELEASE_KEY_PASSWORD")
+}
+android.buildTypes.release.signingConfig = android.signingConfigs.kaddProduction
+"""
     APP_GRADLE_PATH.write_text(gradle, encoding="utf-8")
 
 
