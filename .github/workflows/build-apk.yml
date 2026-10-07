@@ -24,6 +24,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Install Android API 36 platform
+        uses: android-actions/setup-android@v3
+      - name: Ensure Android API 36 is available
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
       - name: Generate Android platform
         run: |
           rm -rf android
