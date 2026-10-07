@@ -17,36 +17,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Provision CI debug keystore
-        shell: bash
-        run: |
-          # The Android Gradle plugin on this runner resolves its debug key at
-          # $ANDROID_USER_HOME/debug.keystore. Keep compatibility copies in
-          # the conventional .android locations as well.
-          ANDROID_USER_HOME="${ANDROID_USER_HOME:-$HOME/.config}"
-          export ANDROID_USER_HOME
-          PRIMARY_KEYSTORE="$ANDROID_USER_HOME/debug.keystore"
-          mkdir -p "$ANDROID_USER_HOME" "$ANDROID_USER_HOME/.android" "$HOME/.android"
-
-          if [ ! -s "$PRIMARY_KEYSTORE" ]; then
-            keytool -genkeypair -v \
-              -keystore "$PRIMARY_KEYSTORE" \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
-
-          cp "$PRIMARY_KEYSTORE" "$ANDROID_USER_HOME/.android/debug.keystore"
-          cp "$PRIMARY_KEYSTORE" "$HOME/.android/debug.keystore"
-          test -s "$PRIMARY_KEYSTORE"
-          test -s "$ANDROID_USER_HOME/.android/debug.keystore"
-          test -s "$HOME/.android/debug.keystore"
-          echo "ANDROID_USER_HOME=$ANDROID_USER_HOME" >> "$GITHUB_ENV"
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.41.9
@@ -54,17 +24,18 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Validate Android platform
+      - name: Generate Android platform
         run: |
-          test -f android/settings.gradle
-          test -f android/app/src/main/AndroidManifest.xml
-          test -f android/app/src/main/kotlin/com/comptaflow/kadd/MainActivity.kt
-          test -d android_additions/kotlin
+          rm -rf android
+          flutter create --platforms=android --org com.comptaflow .
 
-      - name: Copy native Kotlin sources into the Android project
+      - name: Install canonical Kadd native sources
         run: |
           mkdir -p android/app/src/main/kotlin/com/comptaflow/kadd
           cp android_additions/kotlin/*.kt android/app/src/main/kotlin/com/comptaflow/kadd/
+
+      - name: Patch generated Android project
+        run: python3 scripts/patch_manifest.py
 
       - name: Install Flutter dependencies
         run: flutter pub get
@@ -81,33 +52,11 @@ jobs:
       - name: Flutter tests
         run: flutter test
 
-      - name: Configure optional release signing
-        env:
-          KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
-        run: |
-          if [ -n "$KADD_RELEASE_KEYSTORE" ] && [ ! -f "$KADD_RELEASE_KEYSTORE" ]; then
-            echo "Configured release keystore path does not exist: $KADD_RELEASE_KEYSTORE"
-            exit 1
-          fi
-
-      - name: Clean Android build outputs
-        run: flutter clean
-
-      - name: Verify CI signing key
-        run: |
-          test -s "$ANDROID_USER_HOME/debug.keystore"
-          test -s "$ANDROID_USER_HOME/.android/debug.keystore"
-          keytool -list -keystore "$ANDROID_USER_HOME/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
-
       - name: Build release APK
         env:
           KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
           KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
           KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
-          KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
-          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
-          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
-          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
         shell: bash
         run: |
           dart_defines=()
@@ -124,10 +73,6 @@ jobs:
           KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
           KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
           KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
-          KADD_RELEASE_KEYSTORE: ${{ secrets.KADD_RELEASE_KEYSTORE_PATH }}
-          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
-          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
-          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
         shell: bash
         run: |
           dart_defines=()
