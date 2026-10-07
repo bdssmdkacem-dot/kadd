@@ -128,7 +128,7 @@ class AppState extends ChangeNotifier {
       debugPrint('Kadd: initial lock sync failed: $e\n$st');
     }
 
-    unawaited(refreshPrayerTimes());
+    unawaited(refreshPrayerTimes().then((_) {}));
     unawaited(loadAvailableApps());
   }
 
