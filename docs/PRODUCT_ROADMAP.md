@@ -62,10 +62,11 @@ The product must remain privacy-first: app inventory, usage detection, camera fr
 
 - [ ] Replace AdMob test IDs with production IDs.
 - [ ] Configure Play App Signing/upload key outside the repository.
-- [ ] Build signed AAB in CI.
+- [ ] Build signed AAB in CI with a mandatory production upload keystore.
 - [ ] Complete Data Safety and sensitive-permission declarations.
 - [ ] Host the privacy policy publicly and keep its wording aligned with the actual SDK/data flows.
 - [ ] Verify foreground-service and package-visibility declarations against the current Google Play policy before submission.
+- [ ] Target Android API 36 and verify Android 16 behavior before Play submission.
 - [ ] Internal test → closed test → production rollout.
 - [ ] Crash/ANR monitoring and release checklist.
 
