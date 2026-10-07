@@ -104,6 +104,10 @@ def patch_gradle() -> None:
     gradle = APP_GRADLE_PATH.read_text(encoding="utf-8")
     marker = "// kadd: generated Android configuration"
     if marker not in gradle:
+        # Kadd is an Android-first Play app. New Play submissions from
+        # 2026-08-31 require API 36+.
+        gradle = re.sub(r"compileSdk(?:Version)?\\s*=.*", "compileSdk = 36", gradle)
+        gradle = re.sub(r"targetSdk(?:Version)?\\s*=.*", "targetSdk = 36", gradle)
         needle = "defaultConfig {"
         idx = gradle.find(needle)
         if idx == -1:
