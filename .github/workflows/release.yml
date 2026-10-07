@@ -1,0 +1,106 @@
+name: Kadd Production AAB
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          cache: true
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate production secrets
+        env:
+          KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
+          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
+          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
+          KADD_RELEASE_KEYSTORE_B64: ${{ secrets.KADD_RELEASE_KEYSTORE_B64 }}
+          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
+          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
+          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
+        run: |
+          test -n "$KADD_ADMOB_APP_ID"
+          test -n "$KADD_ADMOB_BANNER_ID"
+          test -n "$KADD_ADMOB_INTERSTITIAL_ID"
+          test -n "$KADD_RELEASE_KEYSTORE_B64"
+          test -n "$KADD_RELEASE_STORE_PASSWORD"
+          test -n "$KADD_RELEASE_KEY_ALIAS"
+          test -n "$KADD_RELEASE_KEY_PASSWORD"
+
+      - name: Decode production upload keystore
+        env:
+          KADD_RELEASE_KEYSTORE_B64: ${{ secrets.KADD_RELEASE_KEYSTORE_B64 }}
+        run: |
+          echo "$KADD_RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/kadd-upload.jks"
+          test -s "$RUNNER_TEMP/kadd-upload.jks"
+
+      - name: Generate Android platform
+        run: |
+          rm -rf android
+          flutter create --platforms=android --org com.comptaflow .
+
+      - name: Install canonical Kadd native sources
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/comptaflow/kadd
+          cp android_additions/kotlin/*.kt android/app/src/main/kotlin/com/comptaflow/kadd/
+
+      - name: Patch Android for production
+        env:
+          KADD_ADMOB_APP_ID: ${{ secrets.KADD_ADMOB_APP_ID }}
+          KADD_REQUIRE_PRODUCTION_SIGNING: "1"
+          KADD_RELEASE_KEYSTORE: ${{ runner.temp }}/kadd-upload.jks
+          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
+          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
+          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
+        run: python3 scripts/patch_manifest.py
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: flutter pub run flutter_launcher_icons
+
+      - name: Static analysis
+        run: flutter analyze --no-fatal-infos
+
+      - name: Flutter tests
+        run: flutter test
+
+      - name: Build signed production AAB
+        env:
+          KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
+          KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
+          KADD_RELEASE_KEYSTORE: ${{ runner.temp }}/kadd-upload.jks
+          KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
+          KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
+          KADD_RELEASE_KEY_PASSWORD: ${{ secrets.KADD_RELEASE_KEY_PASSWORD }}
+        run: |
+          flutter build appbundle --release \
+            --dart-define=KADD_ADMOB_BANNER_ID="$KADD_ADMOB_BANNER_ID" \
+            --dart-define=KADD_ADMOB_INTERSTITIAL_ID="$KADD_ADMOB_INTERSTITIAL_ID"
+
+      - name: Upload production AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: kadd-production-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
