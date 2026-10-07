@@ -339,9 +339,19 @@ class AppState extends ChangeNotifier {
       await prefs.setString('selectedCity', city.aladhanName);
       selectedCity = city;
       notifyListeners();
-      await refreshPrayerTimes();
+      final refreshed = await refreshPrayerTimes();
+      if (!refreshed) {
+        selectedCity = previous;
+        await prefs.setString('selectedCity', previous.aladhanName);
+        notifyListeners();
+        return;
+      }
     } catch (e) {
       selectedCity = previous;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('selectedCity', previous.aladhanName);
+      } catch (_) {}
       notifyListeners();
       rethrow;
     }
@@ -355,7 +365,7 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<void> refreshPrayerTimes() async {
+  Future<bool> refreshPrayerTimes() async {
     try {
       final result = await _prayerTimesService.fetchTodayTimings(selectedCity);
       for (final p in prayers) {
@@ -363,9 +373,11 @@ class AppState extends ChangeNotifier {
       }
       await _scheduleCurrentPrayerLocks();
       notifyListeners();
+      return true;
     } catch (e) {
       debugPrint('Prayer time fetch failed: $e');
       notifyListeners();
+      return false;
     }
   }
 
