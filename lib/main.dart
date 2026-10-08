@@ -7,6 +7,8 @@ import 'models/locked_app.dart';
 import 'models/prayer.dart';
 import 'state/app_state.dart';
 import 'services/ads_service.dart';
+import 'services/premium_service.dart';
+import 'screens/premium_screen.dart';
 import 'theme.dart';
 import 'widgets/kadd_card.dart';
 import 'screens/home_screen.dart';
@@ -22,8 +24,11 @@ void main() {
   final AppState state = AppState();
 
   runApp(
-    ChangeNotifierProvider<AppState>.value(
-      value: state,
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AppState>.value(value: state),
+        ChangeNotifierProvider<PremiumService>.value(value: PremiumService.instance),
+      ],
       child: const KaddApp(),
     ),
   );
@@ -37,6 +42,13 @@ Future<void> _initializeSafely(AppState state) async {
   } catch (error, stack) {
     debugPrint('Kadd: startup initialization failed: $error');
     debugPrint('Kadd: startup initialization stack:\n$stack');
+  }
+
+  try {
+    await PremiumService.instance.init();
+  } catch (error, stack) {
+    debugPrint('Kadd: Premium initialization failed: $error');
+    debugPrint('Kadd: Premium initialization stack:\n$stack');
   }
 
   try {
@@ -71,6 +83,13 @@ class KaddApp extends StatelessWidget {
       return MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => _LockRepEntry(packageName: packageName),
+      );
+    }
+
+    if (uri.path == '/premium') {
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => const PremiumScreen(),
       );
     }
 
