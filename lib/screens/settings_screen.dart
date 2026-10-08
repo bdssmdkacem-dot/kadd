@@ -8,7 +8,6 @@ import '../widgets/kadd_background.dart';
 import '../widgets/kadd_card.dart';
 import 'app_picker_screen.dart';
 import 'privacy_screen.dart';
-import 'premium_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
