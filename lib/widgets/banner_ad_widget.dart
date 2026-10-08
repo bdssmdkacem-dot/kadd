@@ -24,7 +24,9 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     super.didChangeDependencies();
     if (!_requested) {
       _requested = true;
-      _loadAd();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadAd();
+      });
     }
   }
 
@@ -66,14 +68,18 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final isPremium = context.watch<PremiumService>().isPremium;
-    if (isPremium) return const SizedBox.shrink();
-    final ad = _bannerAd;
-    if (!_isLoaded || ad == null) return const SizedBox.shrink();
-    return SizedBox(
-      width: ad.size.width.toDouble(),
-      height: ad.size.height.toDouble(),
-      child: AdWidget(ad: ad),
+    return ListenableBuilder(
+      listenable: PremiumService.instance,
+      builder: (context, _) {
+        if (PremiumService.instance.isPremium) return const SizedBox.shrink();
+        final ad = _bannerAd;
+        if (!_isLoaded || ad == null) return const SizedBox.shrink();
+        return SizedBox(
+          width: ad.size.width.toDouble(),
+          height: ad.size.height.toDouble(),
+          child: AdWidget(ad: ad),
+        );
+      },
     );
   }
 }
