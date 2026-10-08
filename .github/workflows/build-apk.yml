@@ -29,7 +29,6 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
-
       - name: Generate Android platform
         run: |
           rm -rf android
@@ -76,6 +75,45 @@ jobs:
             dart_defines+=("--dart-define=KADD_ADMOB_INTERSTITIAL_ID=$KADD_ADMOB_INTERSTITIAL_ID")
           fi
           flutter build apk --release "${dart_defines[@]}"
+
+      - name: Android emulator launch smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          force-avd-creation: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          disable-animations: true
+          script: |
+            set -e
+            adb install -r build/app/outputs/flutter-apk/app-release.apk
+            adb shell am force-stop com.comptaflow.kadd
+            adb shell monkey -p com.comptaflow.kadd 1
+            sleep 10
+
+            echo "=== Activity state ==="
+            adb shell dumpsys activity activities | grep -E "mResumedActivity|mFocusedApp" || true
+
+            echo "=== Process check ==="
+            pid="$(adb shell pidof com.comptaflow.kadd | tr -d '')"
+            if [ -z "$pid" ]; then
+              echo "Kadd process is not running after launch."
+              adb logcat -d -t 500
+              exit 1
+            fi
+            echo "Kadd process is running with PID $pid"
+
+            echo "=== Fatal Android exceptions ==="
+            fatal="$(adb logcat -d -t 1000 | grep -E "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.comptaflow.kadd" || true)"
+            if [ -n "$fatal" ]; then
+              echo "$fatal"
+              adb logcat -d -t 1000
+              exit 1
+            fi
+
+            echo "Kadd release APK launch smoke test passed."
 
       - name: Build release AAB
         env:
