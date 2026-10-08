@@ -89,6 +89,7 @@ jobs:
           script: |
             set -e
             adb install -r build/app/outputs/flutter-apk/app-release.apk
+            adb logcat -c
             adb shell am force-stop com.comptaflow.kadd
             adb shell monkey -p com.comptaflow.kadd 1
             sleep 10
