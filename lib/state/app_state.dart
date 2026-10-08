@@ -415,13 +415,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       await _persistEnabledPrayers();
-      await _scheduleCurrentPrayerLocks();
       await refreshPrayerTimes();
     } catch (e) {
       p.enabled = previous;
       await _persistEnabledPrayers();
       try {
-        await _scheduleCurrentPrayerLocks();
+        await refreshPrayerTimes();
       } catch (_) {}
       notifyListeners();
       rethrow;
@@ -434,13 +433,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       await (await SharedPreferences.getInstance()).setInt('delayMinutes', delayMinutesAfterAthan);
-      await _scheduleCurrentPrayerLocks();
       await refreshPrayerTimes();
     } catch (e) {
       delayMinutesAfterAthan = previous;
       await (await SharedPreferences.getInstance()).setInt('delayMinutes', previous);
       try {
-        await _scheduleCurrentPrayerLocks();
+        await refreshPrayerTimes();
       } catch (_) {}
       notifyListeners();
       rethrow;
