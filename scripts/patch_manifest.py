@@ -31,6 +31,11 @@ def fail(message: str) -> None:
 
 
 def patch_manifest() -> None:
+    if os.environ.get("KADD_REQUIRE_PRODUCTION_SIGNING") == "1":
+        app_id = os.environ.get("KADD_ADMOB_APP_ID", "").strip()
+        if not app_id or app_id == "ca-app-pub-3940256099942544~3347511713":
+            fail("production signing requested but a real KADD_ADMOB_APP_ID is missing")
+
     if not MANIFEST_PATH.exists():
         fail(f"{MANIFEST_PATH} not found — run flutter create --platforms=android --org com.comptaflow . first")
 
