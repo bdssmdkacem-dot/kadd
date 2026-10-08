@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../services/ads_service.dart';
 import '../services/premium_service.dart';
@@ -65,7 +66,8 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (PremiumService.instance.isPremium) return const SizedBox.shrink();
+    final isPremium = context.watch<PremiumService>().isPremium;
+    if (isPremium) return const SizedBox.shrink();
     final ad = _bannerAd;
     if (!_isLoaded || ad == null) return const SizedBox.shrink();
     return SizedBox(
