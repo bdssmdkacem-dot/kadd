@@ -110,13 +110,13 @@ def patch_gradle() -> None:
     if marker not in gradle:
         # Kadd is an Android-first Play app. Keep compile/target SDK at API 36.
         gradle = re.sub(
-            r"(?m)^\\s*compileSdk\\s*=.*$",
+            r"(?m)^\s*compileSdk\s*=.*$",
             "    compileSdk = 36" if is_kotlin_dsl else "    compileSdk 36",
             gradle,
             count=1,
         )
         gradle = re.sub(
-            r"(?m)^\\s*targetSdk\\s*=.*$",
+            r"(?m)^\s*targetSdk\s*=.*$",
             "        targetSdk = 36" if is_kotlin_dsl else "        targetSdk 36",
             gradle,
             count=1,
@@ -129,11 +129,11 @@ def patch_gradle() -> None:
 
         if is_kotlin_dsl:
             insertion = (
-                f"{needle}\\n"
-                f"        {marker}\\n"
+                f"{needle}\n"
+                f"        {marker}\n"
                 '        manifestPlaceholders["KADD_ADMOB_APP_ID"] = '
                 '(System.getenv("KADD_ADMOB_APP_ID") ?: '
-                '"ca-app-pub-3940256099942544~3347511713")\\n'
+                '"ca-app-pub-3940256099942544~3347511713")\n'
             )
         else:
             insertion = (
