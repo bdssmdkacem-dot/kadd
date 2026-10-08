@@ -33,7 +33,9 @@ void main() {
     ),
   );
 
-  unawaited(_initializeSafely(state));
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(_initializeSafely(state));
+  });
 }
 
 Future<void> _initializeSafely(AppState state) async {
