@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'premium_service.dart';
 
 /// AdMob identifiers are build-time configurable. The repository keeps
 /// Google's official test IDs by default; production CI can inject real IDs
 /// without committing them to source control.
 class AdUnitIds {
+  static const requireProduction = String.fromEnvironment(
+    'KADD_REQUIRE_PRODUCTION_ADS',
+    defaultValue: 'false',
+  ) == 'true';
+
   static const banner = String.fromEnvironment(
     'KADD_ADMOB_BANNER_ID',
     defaultValue: kAndroidBannerTestId,
@@ -14,6 +20,10 @@ class AdUnitIds {
     'KADD_ADMOB_INTERSTITIAL_ID',
     defaultValue: kAndroidInterstitialTestId,
   );
+
+  static bool get productionConfigurationValid =>
+      !requireProduction ||
+      (banner != kAndroidBannerTestId && interstitial != kAndroidInterstitialTestId);
 
   static const kAndroidBannerTestId = 'ca-app-pub-3940256099942544/6300978111';
   static const kAndroidInterstitialTestId = 'ca-app-pub-3940256099942544/1033173712';
@@ -39,6 +49,13 @@ class AdsService {
 
   Future<void> init() async {
     if (_initialized) return;
+    if (AdUnitIds.requireProduction && !AdUnitIds.productionConfigurationValid) {
+      throw StateError('Production build is missing real AdMob banner/interstitial IDs.');
+    }
+    if (PremiumService.instance.isPremium) {
+      _initialized = true;
+      return;
+    }
     await _requestConsent();
     await MobileAds.instance.initialize();
     _initialized = true;
@@ -113,6 +130,7 @@ class AdsService {
 
   /// Call after a successful unlock (reps verified or prayer-rug verified).
   void maybeShowInterstitialAfterUnlock() {
+    if (PremiumService.instance.isPremium) return;
     _unlocksSinceLastAd++;
     if (_unlocksSinceLastAd < _unlocksBetweenAds) return;
     final ad = _interstitialAd;
