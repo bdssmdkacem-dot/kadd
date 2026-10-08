@@ -91,6 +91,16 @@ def patch_manifest() -> None:
             + manifest[idx:]
         )
 
+    # Resolve the AdMob application ID before manifest merge. A concrete value is
+    # required because MobileAdsInitProvider validates it before Flutter starts.
+    admob_app_id = os.environ.get(
+        "KADD_ADMOB_APP_ID",
+        "ca-app-pub-3940256099942544~3347511713",
+    ).strip()
+    if not admob_app_id:
+        fail("KADD_ADMOB_APP_ID cannot be empty")
+    manifest = manifest.replace("${KADD_ADMOB_APP_ID}", admob_app_id)
+
     manifest = manifest.replace(
         'xmlns:android="http://schemas.android.com/apk/res/android"',
         'xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"',
