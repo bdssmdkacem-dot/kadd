@@ -98,7 +98,7 @@ jobs:
             adb shell dumpsys activity activities | grep -E "mResumedActivity|mFocusedApp" || true
 
             echo "=== Process check ==="
-            pid="$(adb shell pidof com.comptaflow.kadd | tr -d '')"
+            pid="$(adb shell pidof com.comptaflow.kadd | tr -d '\\r')"
             if [ -z "$pid" ]; then
               echo "Kadd process is not running after launch."
               adb logcat -d -t 500
