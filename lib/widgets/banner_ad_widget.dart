@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../services/ads_service.dart';
+import '../services/premium_service.dart';
 
 /// Adaptive banner that loads itself on mount and disposes itself on
 /// unmount. Renders nothing (zero height) while loading or if the load
@@ -64,6 +65,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (PremiumService.instance.isPremium) return const SizedBox.shrink();
     final ad = _bannerAd;
     if (!_isLoaded || ad == null) return const SizedBox.shrink();
     return SizedBox(
