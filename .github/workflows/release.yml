@@ -65,6 +65,7 @@ jobs:
         env:
           KADD_ADMOB_BANNER_ID: ${{ secrets.KADD_ADMOB_BANNER_ID }}
           KADD_ADMOB_INTERSTITIAL_ID: ${{ secrets.KADD_ADMOB_INTERSTITIAL_ID }}
+          KADD_REQUIRE_PRODUCTION_ADS: "true"
           KADD_RELEASE_KEYSTORE: ${{ runner.temp }}/kadd-upload.jks
           KADD_RELEASE_STORE_PASSWORD: ${{ secrets.KADD_RELEASE_STORE_PASSWORD }}
           KADD_RELEASE_KEY_ALIAS: ${{ secrets.KADD_RELEASE_KEY_ALIAS }}
@@ -72,7 +73,8 @@ jobs:
         run: |
           flutter build appbundle --release \
             --dart-define=KADD_ADMOB_BANNER_ID="$KADD_ADMOB_BANNER_ID" \
-            --dart-define=KADD_ADMOB_INTERSTITIAL_ID="$KADD_ADMOB_INTERSTITIAL_ID"
+            --dart-define=KADD_ADMOB_INTERSTITIAL_ID="$KADD_ADMOB_INTERSTITIAL_ID" \
+            --dart-define=KADD_REQUIRE_PRODUCTION_ADS="$KADD_REQUIRE_PRODUCTION_ADS"
 
       - name: Upload production AAB
         uses: actions/upload-artifact@v4
