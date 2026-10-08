@@ -98,21 +98,13 @@ jobs:
             adb shell dumpsys activity activities | grep -E "mResumedActivity|mFocusedApp" || true
 
             echo "=== Process check ==="
-            pid="$(adb shell pidof com.comptaflow.kadd | tr -d '\\r')"
-            if [ -z "$pid" ]; then
-              echo "Kadd process is not running after launch."
-              adb logcat -d -t 500
-              exit 1
-            fi
+            pid="$(adb shell pidof com.comptaflow.kadd | tr -d '\r')"
+            test -n "$pid" || { echo "Kadd process is not running after launch."; adb logcat -d -t 500; exit 1; }
             echo "Kadd process is running with PID $pid"
 
             echo "=== Fatal Android exceptions ==="
             fatal="$(adb logcat -d -t 1000 | grep -E "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.comptaflow.kadd" || true)"
-            if [ -n "$fatal" ]; then
-              echo "$fatal"
-              adb logcat -d -t 1000
-              exit 1
-            fi
+            test -z "$fatal" || { echo "$fatal"; adb logcat -d -t 1000; exit 1; }
 
             echo "Kadd release APK launch smoke test passed."
 
