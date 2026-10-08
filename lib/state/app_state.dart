@@ -60,7 +60,7 @@ class AppState extends ChangeNotifier {
   int totalReps = 0;
   int totalMinutesEarned = 0;
   int prayerUnlocks = 0;
-  final List<bool> last7Days = List.filled(7, false);
+  final List<bool> last7Days = List<bool>.filled(7, false, growable: true);
   final Set<String> _activityDates = <String>{};
   final Map<String, AppUsageSummary> _appUsage = <String, AppUsageSummary>{};
   final Set<String> _activeUnlockOperations = <String>{};
